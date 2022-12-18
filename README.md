@@ -71,7 +71,7 @@ dataset = LightlyDataset.from_torch_dataset(cifar10)
 simclr_collate_fn = SimCLRCollateFunction(input_size=32)
 base_transforms = simclr_collate_fn.transform
 # or any of your own transforms, like this:
-# base_tranforms = T.Compose([
+# base_transforms = T.Compose([
 #     # your transforms here
 # ])
 
