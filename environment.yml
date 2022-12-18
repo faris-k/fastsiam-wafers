@@ -1,4 +1,4 @@
-name: deeplearning2
+name: fastsiam-wafers
 channels:
     - defaults
     - conda-forge
