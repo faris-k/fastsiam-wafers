@@ -1,0 +1,6 @@
+# Scripts
+- `benchmarking.py`: Imagenette benchmark we ran for FastSiam. Mostly copied from lightly's benchmark [here](https://github.com/lightly-ai/lightly/blob/442e54bc1af40cc904c41a8856f36882c7f9701b/docs/source/getting_started/benchmarks/imagenette_benchmark.py).
+- `wm811k.ipynb`: Analyzing, cleaning, and splitting the WM-811K dataset, plus some prototyping of collate functions that make sense for semiconductor wafer maps.
+- `fastsiam_wafers.ipynb`: Training FastSiam on our full training data in a self-supervised fashion.
+- `fully_supervised.ipynb`: Training a modified ResNet-18 end-to-end in a fully supervised fashion on different splits of our training data, as a baseline for comparison.
+- `linear_probe.ipynb`: Analyzing frozen features from a FastSiam pretrained in a self-supervised fashion with UMAP embedding visualizations. We also fit a shallow MLP on these frozen features using different amounts of labeled data to see how we compare against a fully supervised ResNet-18 baseline.
