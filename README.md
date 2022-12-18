@@ -87,39 +87,39 @@ trainer.fit(model=model, train_dataloaders=dataloader)
 
 ## BibTeX
 FastSiam:
-```TeX
+```bibtex
 @inproceedings{pototzky2022fastsiam,
-  title={FastSiam: Resource-Efficient Self-supervised Learning on a Single GPU},
-  author={Pototzky, Daniel and Sultan, Azhar and Schmidt-Thieme, Lars},
-  booktitle={DAGM German Conference on Pattern Recognition},
-  pages={53--67},
-  year={2022},
-  organization={Springer}
+    title={FastSiam: Resource-Efficient Self-supervised Learning on a Single GPU},
+    author={Pototzky, Daniel and Sultan, Azhar and Schmidt-Thieme, Lars},
+    booktitle={DAGM German Conference on Pattern Recognition},
+    pages={53--67},
+    year={2022},
+    organization={Springer}
 }
 ```
 
 WM-811K Dataset:
-```
+```bibtex
 @article{wu2014wafer,
-  title={Wafer map failure pattern recognition and similarity ranking for large-scale data sets},
-  author={Wu, Ming-Ju and Jang, Jyh-Shing R and Chen, Jui-Long},
-  journal={IEEE Transactions on Semiconductor Manufacturing},
-  volume={28},
-  number={1},
-  pages={1--12},
-  year={2014},
-  publisher={IEEE}
+    title={Wafer map failure pattern recognition and similarity ranking for large-scale data sets},
+    author={Wu, Ming-Ju and Jang, Jyh-Shing R and Chen, Jui-Long},
+    journal={IEEE Transactions on Semiconductor Manufacturing},
+    volume={28},
+    number={1},
+    pages={1--12},
+    year={2014},
+    publisher={IEEE}
 }
 ```
 
 
 Lightly: 
-```TeX
+```bibtex
 @article{susmelj2020lightly,
-  title={Lightly},
-  author={Igor Susmelj and Matthias Heller and Philipp Wirth and Jeremy Prescott and Malte Ebner et al.},
-  journal={GitHub. Note: https://github.com/lightly-ai/lightly},
-  year={2020}
+    title={Lightly},
+    author={Igor Susmelj and Matthias Heller and Philipp Wirth and Jeremy Prescott and Malte Ebner et al.},
+    journal={GitHub. Note: https://github.com/lightly-ai/lightly},
+    year={2020}
 }
 ```
 
