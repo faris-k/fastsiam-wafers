@@ -1,0 +1,25 @@
+name: deeplearning2
+channels:
+    - defaults
+    - conda-forge
+    - pytorch
+dependencies:
+    - pytorch
+    - torchvision
+    - torchaudio
+    - pytorch-cuda=11.6
+    - umap-learn
+    - scikit-learn
+    - pandas
+    - pandarallel
+    - seaborn
+    - plotly
+    - ipykernel
+    - ipywidgets
+    - tqdm
+    - opencv
+    - ca-certificates
+    - certifi
+    - openssl
+    - black
+    - pipreqs
