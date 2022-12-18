@@ -77,7 +77,11 @@ base_transforms = simclr_collate_fn.transform
 
 fastsiam_collate_fn = MultiViewCollateFunction([base_transforms] * 4)
 
-dataloader = DataLoader(dataset, collate_fn=fastsiam_collate_fn,)
+dataloader = DataLoader(
+    dataset,
+    batch_size=32,
+    collate_fn=fastsiam_collate_fn
+)
 
 gpus = 1 if torch.cuda.is_available() else 0
 
