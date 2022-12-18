@@ -83,9 +83,9 @@ dataloader = DataLoader(
     collate_fn=fastsiam_collate_fn
 )
 
-gpus = 1 if torch.cuda.is_available() else 0
+accelerator = "gpu" if torch.cuda.is_available() else "cpu"
 
-trainer = pl.Trainer(max_epochs=10, gpus=gpus)
+trainer = pl.Trainer(max_epochs=10, accelerator=accelerator, devices=-1)
 trainer.fit(model=model, train_dataloaders=dataloader)
 ```
 
