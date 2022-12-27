@@ -107,7 +107,7 @@ gather_distributed = False
 
 # benchmark
 n_runs = 1  # optional, increase to create multiple runs and report mean + std
-batch_size = 16
+batch_size = 32
 lr_factor = batch_size / 256  #  scales the learning rate linearly with batch size
 
 # use a GPU if available
@@ -124,8 +124,8 @@ else:
 
 # The dataset structure should be like this:
 
-path_to_train = "datasets/imagenette2-160/train"
-path_to_test = "datasets/imagenette2-160/train"
+path_to_train = "../data/datasets/imagenette2-160/train"
+path_to_test = "../data/datasets/imagenette2-160/train"
 
 # Use SimCLR augmentations
 collate_fn = lightly.data.SimCLRCollateFunction(
@@ -159,8 +159,7 @@ mae_collate_fn = lightly.data.MAECollateFunction()
 msn_collate_fn = lightly.data.MSNCollateFunction(random_size=128, focal_size=64)
 
 # FastSiam collate
-simclr_collate_fn = SimCLRCollateFunction(input_size=128, gaussian_blur=0.0)
-base_transforms = simclr_collate_fn.transform
+base_transforms = collate_fn.transform
 fast_siam_collate_fn = MultiViewCollateFunction([base_transforms] * 4)
 
 normalize_transform = torchvision.transforms.Normalize(
@@ -216,7 +215,7 @@ def get_data_loaders(batch_size: int, model):
         shuffle=True,
         collate_fn=col_fn,
         drop_last=True,
-        num_workers=num_workers,
+        # num_workers=num_workers,
     )
 
     dataloader_train_kNN = torch.utils.data.DataLoader(
@@ -224,7 +223,7 @@ def get_data_loaders(batch_size: int, model):
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers,
+        # num_workers=num_workers,
     )
 
     dataloader_test = torch.utils.data.DataLoader(
@@ -232,7 +231,7 @@ def get_data_loaders(batch_size: int, model):
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        num_workers=num_workers,
+        # num_workers=num_workers,
     )
 
     return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
@@ -989,24 +988,14 @@ class SMoGModel(BenchmarkModule):
 class FastSiamModel(BenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
-        # create a ResNet backbone and remove the classification head
-        # See https://github.com/lightly-ai/lightly/blob/7d3bc64ac3372c6e7ec8e24a8c56fb499209957f/lightly/models/resnet.py
-        resnet = lightly.models.ResNetGenerator("resnet-18")
+        resnet = torchvision.models.resnet18()
+        feature_dim = list(resnet.children())[-1].in_features
         self.backbone = nn.Sequential(
             *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
         )
-
+        self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
-        # use a 2-layer projection head for cifar10 as described in the paper
-        self.projection_head = heads.ProjectionHead(
-            [
-                (512, 2048, nn.BatchNorm1d(2048), nn.ReLU(inplace=True)),
-                (2048, 2048, nn.BatchNorm1d(2048), None),
-            ]
-        )
-        # self.projection_head = SimSiamProjectionHead(512, 512, 128)
-        # self.prediction_head = SimSiamPredictionHead(128, 64, 128)
-        self.criterion = NegativeCosineSimilarity()
+        self.criterion = lightly.loss.NegativeCosineSimilarity()
 
     def forward(self, x):
         f = self.backbone(x).flatten(start_dim=1)
@@ -1044,16 +1033,16 @@ class FastSiamModel(BenchmarkModule):
         self.log("loss", loss)
         # Monitor the STD of L2-normalized representation to check if it collapses (bad)
         self.log("z1 std", std_of_l2_normalized(z1))
-        self.log("z2 std", std_of_l2_normalized(z2))
-        self.log("z3 std", std_of_l2_normalized(z3))
-        self.log("z4 std", std_of_l2_normalized(z4))
+        # self.log("z2 std", std_of_l2_normalized(z2))
+        # self.log("z3 std", std_of_l2_normalized(z3))
+        # self.log("z4 std", std_of_l2_normalized(z4))
 
-        self.log("mean std", std_of_l2_normalized(mean))
+        # self.log("mean std", std_of_l2_normalized(mean))
 
-        self.log("p1 std", std_of_l2_normalized(p1))
-        self.log("p2 std", std_of_l2_normalized(p2))
-        self.log("p3 std", std_of_l2_normalized(p3))
-        self.log("p4 std", std_of_l2_normalized(p4))
+        # self.log("p1 std", std_of_l2_normalized(p1))
+        # self.log("p2 std", std_of_l2_normalized(p2))
+        # self.log("p3 std", std_of_l2_normalized(p3))
+        # self.log("p4 std", std_of_l2_normalized(p4))
 
         return loss
 
@@ -1063,6 +1052,11 @@ class FastSiamModel(BenchmarkModule):
 
 
 models = [
+    FastSiamModel,
+    SimSiamModel,
+    SimCLRModel,
+    MocoModel,
+    DINOModel
     # BarlowTwinsModel,
     # BYOLModel,
     # DCL,
@@ -1076,7 +1070,6 @@ models = [
     # SimSiamModel,
     # SwaVModel,
     # SMoGModel
-    FastSiamModel
 ]
 bench_results = dict()
 
