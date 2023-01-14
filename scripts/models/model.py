@@ -1,5 +1,6 @@
 import lightly
 import pytorch_lightning as pl
+import timm
 import torch
 from lightly.loss import NegativeCosineSimilarity
 from lightly.models.modules import SimSiamPredictionHead, SimSiamProjectionHead
@@ -8,16 +9,25 @@ from torch import nn
 
 
 class FastSiam(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, backbone, input_dim):
         super().__init__()
         # create a ResNet backbone and remove the classification head
         # See https://github.com/lightly-ai/lightly/blob/7d3bc64ac3372c6e7ec8e24a8c56fb499209957f/lightly/models/resnet.py
-        resnet = lightly.models.ResNetGenerator("resnet-18")
-        self.backbone = nn.Sequential(
-            *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        )
+        # if backbone == "resnet18-lightly":
+        #     resnet = lightly.models.ResNetGenerator("resnet-18")
+        #     self.backbone = nn.Sequential(
+        #         *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
+        #     )
+        #     input_dim = 512
+        # elif backbone == "resnet18":
+        #     self.backbone = timm.create_model("resnet18", num_classes=0)
+        #     input_dim = 512
+        # else:
+        #     self.backbone = timm.create_model("convnextv2_nano", num_classes=0)
+        #     input_dim = 640
+        self.backbone = backbone
         # Original paper uses dimension d=2048. We use 1024 here for lower complexity.
-        self.projection_head = SimSiamProjectionHead(512, 1024, 1024)
+        self.projection_head = SimSiamProjectionHead(input_dim, 1024, 1024)
         # prediction MLP’s hidden layer dimension is always 1/4 of the output dimension
         self.prediction_head = SimSiamPredictionHead(1024, 256, 1024)
         self.criterion = NegativeCosineSimilarity()
@@ -67,3 +77,23 @@ class FastSiam(pl.LightningModule):
         # FastSiam authors use lr=0.125 (?!), SimSiam would use 0.00625 here. 0.06 is a happy medium :)
         optim = torch.optim.SGD(self.parameters(), lr=0.06)
         return optim
+
+
+def fastsiam_resnet18():
+    backbone = timm.create_model("resnet18", num_classes=0)
+    model = FastSiam(backbone, 512)
+    return model
+
+
+def fastsiam_resnet18_lightly():
+    # Lightly uses a different ResNet implementation; need to add a global average pooling layer
+    resnet = lightly.models.ResNetGenerator("resnet-18")
+    backbone = nn.Sequential(*list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1))
+    model = FastSiam(backbone, 512)
+    return model
+
+
+def fastsiam_convnextv2_nano():
+    backbone = timm.create_model("convnextv2_nano", num_classes=0)
+    model = FastSiam(backbone, 640)
+    return model

@@ -1,5 +1,8 @@
+__pycache__
+
 data/datasets
 data/cleaned_splits
+data/embeddings
 scripts/benchmark_logs
 scripts/lightning_logs
 scripts/new_benchmarks.ipynb
