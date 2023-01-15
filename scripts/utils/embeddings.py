@@ -109,6 +109,8 @@ def extract_embeddings(model, data, save_dir: str, name: str):
                 "failureType": data.failureType,
             }
         )
+        # Sort by failureType to  get consistent colors in plots
+        emb_df.sort_values(by="failureType", inplace=True)
 
         # Plot UMAP embedding
         ax = sns.scatterplot(

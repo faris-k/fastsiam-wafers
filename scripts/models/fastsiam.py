@@ -9,33 +9,33 @@ from torch import nn
 
 
 class FastSiam(pl.LightningModule):
+    """Model class for FastSiam.
+
+    Parameters
+    ----------
+    backbone : _type_
+        Backbone encoder for self-supervised learning. Typically any model
+        from timm or torchvision without the last classification head.
+    feat_dim : int
+        Output dimension of the backbone encoder. For resnet18 this is 512.
+    rep_dim : int, optional
+        Output dimension of SimSiam projection and prediction heads, by default 1024.
+        The original paper uses 2048, but we use 1024 here for lower complexity.
+    log_std : bool, optional
+        Whether to log the standard deviation of the l2-normalized features, by default False.
+    """
+
     def __init__(
         self, backbone, feat_dim: int, rep_dim: int = 1024, log_std: bool = True
     ):
-        """Model class for FastSiam.
-
-        Parameters
-        ----------
-        backbone : _type_
-            Backbone encoder for self-supervised learning. Typically any model
-            from timm or torchvision without the last classification head.
-        feat_dim : int
-            Output dimension of the backbone encoder. For resnet18 this is 512.
-        rep_dim : int, optional
-            Output dimension of SimSiam projection and prediction heads, by default 1024.
-            The original paper uses 2048, but we use 1024 here for lower complexity.
-        log_std : bool, optional
-            Whether to log the standard deviation of the l2-normalized features, by default False.
-        """
-
+        super().__init__()
         self.backbone = backbone
         # Original paper uses dimension d=2048. We use 1024 here for lower complexity.
         self.projection_head = SimSiamProjectionHead(feat_dim, rep_dim, rep_dim)
         # prediction MLP’s hidden layer dimension is always 1/4 of the output dimension
-        self.prediction_head = SimSiamPredictionHead(rep_dim, rep_dim / 4, rep_dim)
+        self.prediction_head = SimSiamPredictionHead(rep_dim, rep_dim // 4, rep_dim)
         self.criterion = NegativeCosineSimilarity()
         self.log_std = log_std
-        super().__init__()
 
     def forward(self, x):
         f = self.backbone(x).flatten(start_dim=1)

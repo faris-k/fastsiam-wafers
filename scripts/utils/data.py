@@ -1,19 +1,28 @@
+from typing import List
+
 import numpy as np
+import pandas as pd
 import torch
 import torchvision.transforms as T
 from lightly.data.collate import MultiViewCollateFunction
 from lightly.transforms.rotation import RandomRotate
+from torch.utils.data import Dataset
 from torchvision.transforms.functional import InterpolationMode
 
 
 class DieNoise:
+    """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p."""
+
+    def __init__(self, p: float = 0.03) -> None:
+        self.p = p
+
     def __call__(self, sample: torch.Tensor) -> torch.Tensor:
-        def flip(item, p=0.03):
+        def flip(item):
             """
             Given a wafermap die, flips pass to fail and vice-versa with probability p.
             Does nothing to non-die area (0's if 128's and 255's are passes/fails respectively).
             """
-            prob = np.random.choice([False, True], p=[1 - p, p])
+            prob = np.random.choice([False, True], p=[1 - self.p, self.p])
             if prob:
                 if item == 128:
                     return 255
@@ -28,45 +37,42 @@ class DieNoise:
         return torch.from_numpy(out)
 
 
-base_transforms = T.Compose(
-    [
-        # Add die noise before anything else
-        DieNoise(),
-        # Convert to PIL Image, then perform all torchvision transforms
-        T.ToPILImage(),
-        T.Resize([224, 224], interpolation=InterpolationMode.NEAREST),
-        RandomRotate(0.5),
-        T.RandomVerticalFlip(0.5),
-        T.RandomHorizontalFlip(0.5),
-        T.RandomApply(
-            torch.nn.ModuleList(
-                [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
-            ),
-            0.25,
-        ),
-        # Finally, create a 3-channel image and convert to tensor
-        T.Grayscale(num_output_channels=3),  # R == G == B
-        T.ToTensor(),
-    ]
-)
-
-FastSiamCollateFunction = MultiViewCollateFunction([base_transforms] * 4)
-
-
 class WaferFastSiamCollateFunction(MultiViewCollateFunction):
+    """Custom collate function for FastSiam training on wafermaps."""
+
     def __init__(
         self,
-        hf_prob=0.5,
-        vf_prob=0.5,
-        rr_prob=0.5,
+        img_size: List[int] = [200, 200],
+        die_noise_prob: float = 0.03,
+        hf_prob: float = 0.5,
+        vf_prob: float = 0.5,
+        rr_prob: float = 0.5,
+        rr_prob2: float = 0.25,
     ):
+        """Implements augmentations for FastSiam training on wafermaps.
+
+        Parameters
+        ----------
+        img_size : List[int], optional
+            Size of augmented images, by default [200, 200]
+        die_noise_prob : float, optional
+            Probability of applying die noise on a per-die basis, by default 0.03
+        hf_prob : float, optional
+            Probability of horizontally flipping the image, by default 0.5
+        vf_prob : float, optional
+            Probability of vertically flipping the image, by default 0.5
+        rr_prob : float, optional
+            Probability of rotating the image by 90 degrees, by default 0.5
+        rr_prob2 : float, optional
+            Probability of randomly rotating image between 0 and 90 degrees, by default 0.25
+        """
         base_transforms = T.Compose(
             [
                 # Add die noise before anything else
-                DieNoise(),
+                DieNoise(die_noise_prob),
                 # Convert to PIL Image, then perform all torchvision transforms
                 T.ToPILImage(),
-                T.Resize([224, 224], interpolation=InterpolationMode.NEAREST),
+                T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
                 RandomRotate(rr_prob),
                 T.RandomVerticalFlip(vf_prob),
                 T.RandomHorizontalFlip(hf_prob),
@@ -74,7 +80,7 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
                     torch.nn.ModuleList(
                         [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
                     ),
-                    0.25,
+                    rr_prob2,
                 ),
                 # Finally, create a 3-channel image and convert to tensor
                 T.Grayscale(num_output_channels=3),  # R == G == B
@@ -164,3 +170,25 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
         transforms = [global_transform_0, global_transform_1]
         transforms.extend(local_transforms)
         super().__init__(transforms)
+
+
+class WaferMapDataset(Dataset):
+    """Dataset for wafermaps."""
+
+    def __init__(self, X, y, transform=None):
+        self.data = pd.concat([X, y], axis="columns")
+        # All resizing is done in augmentations, so we have tensors/arraays of different sizes
+        # Because of this, just create a list of tensors
+        self.X_list = [torch.tensor(ndarray) for ndarray in X]
+        self.y_list = [torch.tensor(ndarray) for ndarray in y]
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x = self.X_list[index]
+        y = self.y_list[index]
+        if self.transform:
+            x = self.transform(x)
+        return x, y
+
+    def __len__(self):
+        return len(self.X_list)
