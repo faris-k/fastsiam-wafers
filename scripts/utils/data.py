@@ -48,7 +48,7 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
         vf_prob: float = 0.5,
         rr_prob: float = 0.5,
         rr_prob2: float = 0.25,
-    ):
+    ) -> None:
         """Implements augmentations for FastSiam training on wafermaps.
 
         Parameters
@@ -192,3 +192,23 @@ class WaferMapDataset(Dataset):
 
     def __len__(self):
         return len(self.X_list)
+
+
+def inference_transforms(img_size: List[int] = [224, 224]):
+    """Image transforms for inference.
+    Simply converts to PIL Image, resizes, and converts to tensor.
+
+    Parameters
+    ----------
+    img_size : List[int], optional
+        Size of image, by default [224, 224]
+    """
+    return T.Compose(
+        [
+            # Convert to PIL Image, then perform all torchvision transforms
+            T.ToPILImage(),
+            T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
+            T.Grayscale(num_output_channels=3),
+            T.ToTensor(),
+        ]
+    )

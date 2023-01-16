@@ -1,4 +1,5 @@
 import os
+from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -12,19 +13,27 @@ from tqdm import tqdm
 from umap import UMAP
 
 
-def array_transforms(array):
-    transforms = T.Compose(
+def inference_transforms(img_size: List[int] = [224, 224]):
+    """Image transforms for inference.
+    Simply converts to PIL Image, resizes, and converts to tensor.
+
+    Parameters
+    ----------
+    img_size : List[int], optional
+        Size of image, by default [224, 224]
+    """
+    return T.Compose(
         [
+            # Convert to PIL Image, then perform all torchvision transforms
             T.ToPILImage(),
-            T.Resize([128, 128], interpolation=InterpolationMode.NEAREST),
+            T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
             T.Grayscale(num_output_channels=3),
             T.ToTensor(),
         ]
     )
-    return transforms(array)
 
 
-def extract_embeddings(model, data, save_dir: str, name: str):
+def extract_embeddings(model, data, img_size, save_dir: str, name: str):
     """Given a model and data, extract representations, projections, and predictions
     and plot UMAP embeddings of each. Save results to file.
 
@@ -34,6 +43,8 @@ def extract_embeddings(model, data, save_dir: str, name: str):
         Trained SimSiam/FastSiam model (must have backbone, projection_head, and prediction_head attributes)
     data : DataFrame
         Dataframe containing waferMap and failureType/failureCode columns
+    img_size : List[int]
+        Size of image, e.g. [224, 224]
     save_dir : str
         Root directory to save results to
     name : str
@@ -43,7 +54,7 @@ def extract_embeddings(model, data, save_dir: str, name: str):
     os.makedirs(save_dir, exist_ok=True)
 
     # Apply transforms to wafer map and stack tensors together
-    inputs = data.waferMap.apply(array_transforms)
+    inputs = data.waferMap.apply(inference_transforms(img_size))
     inputs_tensor = torch.stack([_ for _ in inputs.values])
 
     reps = []
