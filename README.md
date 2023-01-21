@@ -11,6 +11,7 @@ For this project, we applied FastSiam to the [WM-811K semiconductor wafer map da
 ```python
 import lightly
 import pytorch_lightning as pl
+import timm
 import torch
 import torchvision
 from lightly.data import LightlyDataset
@@ -24,9 +25,10 @@ from torch.utils.data import DataLoader
 class FastSiam(pl.LightningModule):
     def __init__(self):
         super().__init__()
-        resnet = torchvision.models.resnet18()
-        self.backbone = nn.Sequential(*list(resnet.children())[:-1])
-        self.projection_head = SimSiamProjectionHead(512, 1024, 1024)
+        # Compatible with any backbone encoder, just remove the classification head
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feat_dim = timm.create_model("resnet18").get_classifier().in_features
+        self.projection_head = SimSiamProjectionHead(feat_dim, 1024, 1024)
         self.prediction_head = SimSiamPredictionHead(1024, 256, 1024)
         self.criterion = NegativeCosineSimilarity()
 
