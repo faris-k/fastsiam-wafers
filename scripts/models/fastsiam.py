@@ -102,3 +102,8 @@ def fastsiam_convnextv2_nano():
     backbone = timm.create_model("convnextv2_nano", num_classes=0)
     model = FastSiam(backbone, 640)
     return model
+
+
+# Easy way to get feat_dim for timm models:
+# timm.create_model("resnet18").get_classifier().in_features
+# Doesn't work for torchvision models or lightly ResNetGenerator

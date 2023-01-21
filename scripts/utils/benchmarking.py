@@ -3,12 +3,17 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-from lightly.utils import BenchmarkModule, knn_predict
+from lightly.utils import knn_predict
 from torch.utils.data import DataLoader
+from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
 
 
-class WaferBenchmarkModule(pl.LightningModule):
-    """A PyTorch Lightning Module for automated kNN callback
+# modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
+# source is https://arxiv.org/abs/1805.01978
+class KNNBenchmarkModule(pl.LightningModule):
+    """A PyTorch Lightning Module for automated kNN callback with support for torchmetrics.
+
+    Modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
 
     At the end of every training epoch we create a feature bank by feeding the
     `dataloader_kNN` passed to the module through the backbone.
@@ -35,44 +40,6 @@ class WaferBenchmarkModule(pl.LightningModule):
             Number of nearest neighbors for kNN
         knn_t:
             Temperature parameter for kNN
-
-    Examples:
-        >>> class SimSiamModel(BenchmarkingModule):
-        >>>     def __init__(dataloader_kNN, num_classes):
-        >>>         super().__init__(dataloader_kNN, num_classes)
-        >>>         resnet = lightly.models.ResNetGenerator('resnet-18')
-        >>>         self.backbone = nn.Sequential(
-        >>>             *list(resnet.children())[:-1],
-        >>>             nn.AdaptiveAvgPool2d(1),
-        >>>         )
-        >>>         self.resnet_simsiam =
-        >>>             lightly.models.SimSiam(self.backbone, num_ftrs=512)
-        >>>         self.criterion = lightly.loss.SymNegCosineSimilarityLoss()
-        >>>
-        >>>     def forward(self, x):
-        >>>         self.resnet_simsiam(x)
-        >>>
-        >>>     def training_step(self, batch, batch_idx):
-        >>>         (x0, x1), _, _ = batch
-        >>>         x0, x1 = self.resnet_simsiam(x0, x1)
-        >>>         loss = self.criterion(x0, x1)
-        >>>         return loss
-        >>>     def configure_optimizers(self):
-        >>>         optim = torch.optim.SGD(
-        >>>             self.resnet_simsiam.parameters(), lr=6e-2, momentum=0.9
-        >>>         )
-        >>>         return [optim]
-        >>>
-        >>> model = SimSiamModel(dataloader_train_kNN)
-        >>> trainer = pl.Trainer()
-        >>> trainer.fit(
-        >>>     model,
-        >>>     train_dataloader=dataloader_train_ssl,
-        >>>     val_dataloaders=dataloader_test
-        >>> )
-        >>> # you can get the peak accuracy using
-        >>> print(model.max_accuracy)
-
     """
 
     def __init__(
@@ -85,10 +52,15 @@ class WaferBenchmarkModule(pl.LightningModule):
         super().__init__()
         self.backbone = nn.Module()
         self.max_accuracy = 0.0
+        self.max_f1 = 0.0
         self.dataloader_kNN = dataloader_kNN
         self.num_classes = num_classes
         self.knn_k = knn_k
         self.knn_t = knn_t
+
+        # Initialize metrics for validation; imbalanced classes, so use macro average
+        self.val_accuracy = MulticlassAccuracy(num_classes=num_classes, average="macro")
+        self.val_f1 = MulticlassF1Score(num_classes=num_classes, average="macro")
 
         # create dummy param to keep track of the device the model is using
         self.dummy_param = nn.Parameter(torch.empty(0))
@@ -125,25 +97,29 @@ class WaferBenchmarkModule(pl.LightningModule):
                 self.knn_k,
                 self.knn_t,
             )
-            num = images.size()
-            top1 = (pred_labels[:, 0] == targets).float().sum()
-            
-            return (num, top1)
+            return (pred_labels, targets)
 
-    # def validation_epoch_end(self, outputs):
-    #     device = self.dummy_param.device
-    #     if outputs:
-    #         total_num = torch.Tensor([0]).to(device)
-    #         total_top1 = torch.Tensor([0.0]).to(device)
-    #         for (num, top1) in outputs:
-    #             total_num += num[0]
-    #             total_top1 += top1
+    def validation_epoch_end(self, outputs):
+        device = self.dummy_param.device
+        # Compute classification metrics once we full feature bank
+        if outputs:
+            # concatenate all predictions and targets
+            all_preds = torch.Tensor([]).to(device)
+            all_targets = torch.Tensor([]).to(device)
+            for (pred_labels, targets) in outputs:
+                all_preds = torch.cat((all_preds, pred_labels[:, 0]), dim=0)
+                all_targets = torch.cat((all_targets, targets), dim=0)
 
-    #         if dist.is_initialized() and dist.get_world_size() > 1:
-    #             dist.all_reduce(total_num)
-    #             dist.all_reduce(total_top1)
+            # update metrics
+            self.val_accuracy(all_preds, all_targets)
+            self.val_f1(all_preds, all_targets)
 
-    #         acc = float(total_top1.item() / total_num.item())
-    #         if acc > self.max_accuracy:
-    #             self.max_accuracy = acc
-    #         self.log("kNN_accuracy", acc * 100.0, prog_bar=True)
+            # update maxima
+            if self.val_accuracy.compute().item() > self.max_accuracy:
+                self.max_accuracy = self.val_accuracy.compute().item()
+            if self.val_f1.compute().item() > self.max_f1:
+                self.max_f1 = self.val_f1.compute().item()
+
+            # log metrics
+            self.log("knn_accuracy", self.val_accuracy, on_epoch=True)
+            self.log("knn_f1", self.val_f1, on_epoch=True)
