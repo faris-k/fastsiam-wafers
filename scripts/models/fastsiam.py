@@ -18,6 +18,7 @@ class FastSiam(pl.LightningModule):
         from timm or torchvision without the last classification head.
     feat_dim : int
         Output dimension of the backbone encoder. For resnet18 this is 512.
+        Trick for timm models: `timm.create_model("resnet18").get_classifier().in_features`.
     rep_dim : int, optional
         Output dimension of SimSiam projection and prediction heads, by default 1024.
         The original paper uses 2048, but we use 1024 here for lower complexity.
