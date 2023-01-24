@@ -4,12 +4,13 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as T
-from lightly.data.collate import MultiViewCollateFunction
+from lightly.data.collate import BaseCollateFunction, MultiViewCollateFunction
 from lightly.transforms.rotation import RandomRotate
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import InterpolationMode
 
 
+# TODO: try making this work on PIL images instead of arrays
 class DieNoise:
     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
 
@@ -100,6 +101,48 @@ def base_transforms(
     return T.Compose(transforms)
 
 
+class WaferImageCollateFunction(BaseCollateFunction):
+    """Implements augmentations for self-supervised training on wafermaps.
+    Works for "generic" joint-embedding methods like SimCLR, MoCo-v2, BYOL, SimSiam, etc.
+
+    Parameters
+    ----------
+    img_size : List[int], optional
+        Size of augmented images, by default [200, 200]
+    die_noise_prob : float, optional
+        Probability of applying die noise on a per-die basis, by default 0.03
+    hf_prob : float, optional
+        Probability of horizontally flipping the image, by default 0.5
+    vf_prob : float, optional
+        Probability of vertically flipping the image, by default 0.5
+    rr_prob : float, optional
+        Probability of rotating the image by 90 degrees, by default 0.5
+    rr_prob2 : float, optional
+        Probability of randomly rotating image between 0 and 90 degrees, by default 0.25
+    """
+
+    def __init__(
+        self,
+        img_size: List[int] = [200, 200],
+        die_noise_prob: float = 0.03,
+        hf_prob: float = 0.5,
+        vf_prob: float = 0.5,
+        rr_prob: float = 0.5,
+        rr_prob2: float = 0.25,
+    ):
+
+        transforms = base_transforms(
+            img_size=img_size,
+            die_noise_prob=die_noise_prob,
+            hf_prob=hf_prob,
+            vf_prob=vf_prob,
+            rr_prob=rr_prob,
+            rr_prob2=rr_prob2,
+            to_tensor=True,
+        )
+        super().__init__(transforms)
+
+
 class WaferFastSiamCollateFunction(MultiViewCollateFunction):
     """Implements augmentations for FastSiam training on wafermaps.
 
@@ -138,28 +181,6 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
             rr_prob2=rr_prob2,
             to_tensor=True,
         )
-
-        # base_transforms = T.Compose(
-        #     [
-        #         # Add die noise before anything else
-        #         DieNoise(die_noise_prob),
-        #         # Convert to PIL Image, then perform all torchvision transforms
-        #         T.ToPILImage(),
-        #         T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
-        #         RandomRotate(rr_prob),
-        #         T.RandomVerticalFlip(vf_prob),
-        #         T.RandomHorizontalFlip(hf_prob),
-        #         T.RandomApply(
-        #             torch.nn.ModuleList(
-        #                 [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
-        #             ),
-        #             rr_prob2,
-        #         ),
-        #         # Finally, create a 3-channel image and convert to tensor
-        #         T.Grayscale(num_output_channels=3),  # R == G == B
-        #         T.ToTensor(),
-        #     ]
-        # )
         super().__init__([transforms] * 4)
 
 
@@ -248,7 +269,7 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
         super().__init__(transforms)
 
 
-class MSNCollateFunction(MultiViewCollateFunction):
+class WaferMSNCollateFunction(MultiViewCollateFunction):
     """
     Implements MSN transformations for wafermaps.
     Modified from https://github.com/lightly-ai/lightly/blob/master/lightly/data/collate.py#L855
