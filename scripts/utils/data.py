@@ -189,39 +189,53 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
 
     def __init__(
         self,
-        global_crop_size=224,
-        global_crop_scale=(0.6, 1.0),
-        local_crop_size=96,
-        local_crop_scale=(0.1, 0.4),
-        n_local_views=6,
-        hf_prob=0.5,
-        vf_prob=0.5,
-        rr_prob=0.5,
+        global_crop_size: int = 224,
+        global_crop_scale: Tuple[float, float] = (0.6, 1.0),
+        local_crop_size: int = 96,
+        local_crop_scale: Tuple[float, float] = (0.1, 0.4),
+        n_local_views: int = 6,
+        die_noise_prob: float = 0.03,
+        hf_prob: float = 0.5,
+        vf_prob: float = 0.5,
+        rr_prob: float = 0.5,
+        rr_prob2: float = 0.25,
     ):
+        """Implements augmentations for DINO training on wafermaps.
 
-        base_transforms = T.Compose(
-            [
-                # Add die noise before anything else
-                DieNoise(),
-                # Convert to PIL Image, then perform all torchvision transforms
-                T.ToPILImage(),
-                T.Resize(
-                    [global_crop_size, global_crop_size],
-                    interpolation=InterpolationMode.NEAREST,
-                ),
-                RandomRotate(rr_prob),
-                T.RandomVerticalFlip(vf_prob),
-                T.RandomHorizontalFlip(hf_prob),
-                T.RandomApply(
-                    torch.nn.ModuleList(
-                        [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
-                    ),
-                    0.25,
-                ),
-                # Finally, create a 3-channel image and convert to tensor
-                T.Grayscale(num_output_channels=3),  # R == G == B
-                # T.ToTensor(),
-            ]
+        Parameters
+        ----------
+        global_crop_size : int, optional
+            Size of global crop, by default 224
+        global_crop_scale : tuple, optional
+            Minimum and maximum size of the global crops relative to global_crop_size,
+            by default (0.6, 1.0)
+        local_crop_size : int, optional
+            Size of local crop, by default 96
+        local_crop_scale : tuple, optional
+            Minimum and maximum size of the local crops relative to global_crop_size,
+            by default (0.1, 0.4)
+        n_local_views : int, optional
+            Number of generated local views, by default 6
+        die_noise_prob : float, optional
+            Probability of applying die noise on a per-die basis, by default 0.03
+        hf_prob : float, optional
+            Probability of horizontally flipping, by default 0.5
+        vf_prob : float, optional
+            Probability of vertically flipping, by default 0.5
+        rr_prob : float, optional
+            Probability of rotating by 90 degrees, by default 0.5
+        rr_prob2 : float, optional
+            Probability of randomly rotating image between 0 and 90 degrees, by default 0.25
+        """
+
+        base_transform = base_transforms(
+            img_size=[global_crop_size, global_crop_size],
+            die_noise_prob=die_noise_prob,
+            hf_prob=hf_prob,
+            vf_prob=vf_prob,
+            rr_prob=rr_prob,
+            rr_prob2=rr_prob2,
+            to_tensor=False,
         )
 
         global_crop = T.RandomResizedCrop(
@@ -231,41 +245,34 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
             interpolation=InterpolationMode.NEAREST,
         )
 
-        # first global crop
-        global_transform_0 = T.Compose(
+        local_crop = T.RandomResizedCrop(
+            local_crop_size,
+            scale=local_crop_scale,
+            ratio=(1.0, 1.0),
+            interpolation=InterpolationMode.NEAREST,
+        )
+
+        global_transform = T.Compose(
             [
-                base_transforms,
+                base_transform,
                 global_crop,
                 T.ToTensor(),
             ]
         )
 
-        # second global crop
-        global_transform_1 = T.Compose(
-            [
-                base_transforms,
-                global_crop,
-                T.ToTensor(),
-            ]
-        )
-
-        # transformation for the local small crops
         local_transform = T.Compose(
             [
-                base_transforms,
-                T.RandomResizedCrop(
-                    local_crop_size,
-                    scale=local_crop_scale,
-                    ratio=(1.0, 1.0),
-                    interpolation=InterpolationMode.NEAREST,
-                ),
+                base_transform,
+                local_crop,
                 T.ToTensor(),
             ]
         )
-        local_transforms = [local_transform] * n_local_views
 
-        transforms = [global_transform_0, global_transform_1]
-        transforms.extend(local_transforms)
+        # Create 2 global transforms and n_local_views local transforms
+        global_transforms = [global_transform] * 2
+        local_transforms = [local_transform] * n_local_views
+        transforms = global_transforms + local_transforms
+
         super().__init__(transforms)
 
 
@@ -308,8 +315,8 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
         focal_size: int = 96,
         random_views: int = 2,
         focal_views: int = 10,
-        random_crop_scale: Tuple[float, float] = (0.3, 1.0),
-        focal_crop_scale: Tuple[float, float] = (0.05, 0.3),
+        random_crop_scale: Tuple[float, float] = (0.6, 1.0),
+        focal_crop_scale: Tuple[float, float] = (0.1, 0.4),
         die_noise_prob: float = 0.03,
         rr_prob: float = 0.5,
         hf_prob: float = 0.5,
@@ -317,51 +324,43 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
         rr_prob2: float = 0.25,
     ) -> None:
 
-        base_transforms = [
-            # Add die noise before anything else
-            DieNoise(die_noise_prob),
-            # Convert to PIL Image, then perform all torchvision transforms except cropping
-            T.ToPILImage(),
-            T.Resize(
-                [random_size, random_size], interpolation=InterpolationMode.NEAREST
-            ),
-            RandomRotate(rr_prob),
-            T.RandomVerticalFlip(vf_prob),
-            T.RandomHorizontalFlip(hf_prob),
-            T.RandomApply(
-                torch.nn.ModuleList(
-                    [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
-                ),
-                rr_prob2,
-            ),
-            # Finally, create a 3-channel image and convert to tensor
-            T.Grayscale(num_output_channels=3),  # R == G == B
-            # T.ToTensor(),  # Don't convert to tensor yet since we need to crop first
-        ]
+        base_transform = base_transforms(
+            img_size=[random_size, random_size],
+            die_noise_prob=die_noise_prob,
+            hf_prob=hf_prob,
+            vf_prob=vf_prob,
+            rr_prob=rr_prob,
+            rr_prob2=rr_prob2,
+            to_tensor=False,
+        )
 
         # Create separate transforms for random and focal views
-        random_crop = [
-            T.RandomResizedCrop(
-                size=random_size,
-                scale=random_crop_scale,
-                ratio=(1.0, 1.0),
-                interpolation=InterpolationMode.NEAREST,
-            ),
-            T.ToTensor(),
-        ]
-        focal_crop = [
-            T.RandomResizedCrop(
-                size=focal_size,
-                scale=focal_crop_scale,
-                ratio=(1.0, 1.0),
-                interpolation=InterpolationMode.NEAREST,
-            ),
-            T.ToTensor(),
-        ]
+        random_crop = T.Compose(
+            [
+                T.RandomResizedCrop(
+                    size=random_size,
+                    scale=random_crop_scale,
+                    ratio=(1.0, 1.0),
+                    interpolation=InterpolationMode.NEAREST,
+                ),
+                T.ToTensor(),
+            ]
+        )
+        focal_crop = T.Compose(
+            [
+                T.RandomResizedCrop(
+                    size=focal_size,
+                    scale=focal_crop_scale,
+                    ratio=(1.0, 1.0),
+                    interpolation=InterpolationMode.NEAREST,
+                ),
+                T.ToTensor(),
+            ]
+        )
 
         # Combine base transforms with random and focal crops
-        transform = T.Compose(base_transforms + random_crop)
-        focal_transform = T.Compose(base_transforms + focal_crop)
+        transform = T.Compose([base_transform, random_crop])
+        focal_transform = T.Compose([base_transform, focal_crop])
 
         # Put all transforms together
         transforms = [transform] * random_views
@@ -384,7 +383,7 @@ class WaferMapDataset(Dataset):
 
     def __init__(self, X, y, transform=None):
         self.data = pd.concat([X, y], axis="columns")
-        # All resizing is done in augmentations, so we have tensors/arraays of different sizes
+        # All resizing is done in augmentations, so we have tensors/arrays of different sizes
         # Because of this, just create a list of tensors
         self.X_list = [torch.tensor(ndarray) for ndarray in X]
         self.y_list = [torch.tensor(ndarray) for ndarray in y]

@@ -13,7 +13,7 @@ class FastSiam(pl.LightningModule):
 
     Parameters
     ----------
-    backbone : _type_
+    backbone : nn.Module
         Backbone encoder for self-supervised learning. Typically any model
         from timm or torchvision without the last classification head.
     feat_dim : int
