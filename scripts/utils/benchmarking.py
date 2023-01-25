@@ -121,5 +121,5 @@ class KNNBenchmarkModule(pl.LightningModule):
                 self.max_f1 = self.val_f1.compute().item()
 
             # log metrics
-            self.log("knn_accuracy", self.val_accuracy, on_epoch=True)
-            self.log("knn_f1", self.val_f1, on_epoch=True)
+            self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
+            self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)

@@ -44,7 +44,7 @@ class DieNoise:
         return torch.from_numpy(out)
 
 
-def base_transforms(
+def get_base_transforms(
     img_size: List[int] = [200, 200],
     die_noise_prob: float = 0.03,
     rr_prob: float = 0.5,
@@ -131,7 +131,7 @@ class WaferImageCollateFunction(BaseCollateFunction):
         rr_prob2: float = 0.25,
     ):
 
-        transforms = base_transforms(
+        transforms = get_base_transforms(
             img_size=img_size,
             die_noise_prob=die_noise_prob,
             hf_prob=hf_prob,
@@ -172,7 +172,7 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
         rr_prob2: float = 0.25,
     ):
 
-        transforms = base_transforms(
+        transforms = get_base_transforms(
             img_size=img_size,
             die_noise_prob=die_noise_prob,
             hf_prob=hf_prob,
@@ -228,7 +228,7 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
             Probability of randomly rotating image between 0 and 90 degrees, by default 0.25
         """
 
-        base_transform = base_transforms(
+        base_transform = get_base_transforms(
             img_size=[global_crop_size, global_crop_size],
             die_noise_prob=die_noise_prob,
             hf_prob=hf_prob,
@@ -324,7 +324,7 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
         rr_prob2: float = 0.25,
     ) -> None:
 
-        base_transform = base_transforms(
+        base_transform = get_base_transforms(
             img_size=[random_size, random_size],
             die_noise_prob=die_noise_prob,
             hf_prob=hf_prob,
@@ -400,7 +400,7 @@ class WaferMapDataset(Dataset):
         return len(self.X_list)
 
 
-def inference_transforms(img_size: List[int] = [224, 224]):
+def get_inference_transforms(img_size: List[int] = [224, 224]):
     """Image transforms for inference.
     Simply converts to PIL Image, resizes, and converts to tensor.
 
