@@ -9,39 +9,62 @@ from lightly.transforms.rotation import RandomRotate
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import InterpolationMode
 
-
 # TODO: try making this work on PIL images instead of arrays
-class DieNoise:
+# class DieNoise:
+#     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
+
+#     Parameters
+#     ----------
+#     p : float, optional
+#         Probability of adding noise on a die-level basis, by default 0.03
+#     """
+
+#     def __init__(self, p: float = 0.03):
+#         self.p = p
+
+#     def __call__(self, sample: torch.Tensor) -> torch.Tensor:
+#         def flip(item):
+#             """
+#             Given a wafermap die, flips pass to fail and vice-versa with probability p.
+#             Does nothing to non-die area (0's if 128's and 255's are passes/fails respectively).
+#             """
+#             prob = np.random.choice([False, True], p=[1 - self.p, self.p])
+#             if prob:
+#                 if item == 128:
+#                     return 255
+#                 elif item == 255:
+#                     return 128
+#                 else:
+#                     return item
+#             return item
+
+#         vflip = np.vectorize(flip)
+#         out = vflip(sample)
+#         return torch.from_numpy(out)
+
+# NEW VERSION 🚀
+class DieNoise(object):
     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
 
     Parameters
     ----------
     p : float, optional
-        Probability of adding noise on a die-level basis, by default 0.03
+        Probability of flipping on a die-level basis, by default 0.03
     """
 
-    def __init__(self, p: float = 0.03):
+    def __init__(self, p=0.03) -> None:
         self.p = p
 
     def __call__(self, sample: torch.Tensor) -> torch.Tensor:
-        def flip(item):
-            """
-            Given a wafermap die, flips pass to fail and vice-versa with probability p.
-            Does nothing to non-die area (0's if 128's and 255's are passes/fails respectively).
-            """
-            prob = np.random.choice([False, True], p=[1 - self.p, self.p])
-            if prob:
-                if item == 128:
-                    return 255
-                elif item == 255:
-                    return 128
-                else:
-                    return item
-            return item
-
-        vflip = np.vectorize(flip)
-        out = vflip(sample)
-        return torch.from_numpy(out)
+        # Create a boolean mask of the 128's and 255's in the matrix
+        mask = (sample == 128) | (sample == 255)
+        # Create a tensor of random numbers between 0 and 1 with the same shape as the matrix
+        rand = torch.rand(*sample.shape)
+        # Use the mask and the random numbers to determine which elements to flip
+        flip = ((rand < self.p) & mask).type(torch.bool)
+        # Flip the elements
+        sample[flip] = 383 - sample[flip]
+        return sample
 
 
 def get_base_transforms(

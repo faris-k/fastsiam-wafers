@@ -3,6 +3,8 @@ data/cleaned_splits
 data/embeddings
 scripts/benchmark_logs
 scripts/lightning_logs
+imagenette.ipynb
+new_benchmarks.ipynb
 **bruh**
 
 # Byte-compiled / optimized / DLL files
