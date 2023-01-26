@@ -1,5 +1,5 @@
 data/datasets
-data/cleaned_splits
+# data/cleaned_splits
 data/embeddings
 scripts/benchmark_logs
 scripts/lightning_logs
