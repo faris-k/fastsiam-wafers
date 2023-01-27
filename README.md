@@ -27,7 +27,7 @@ class FastSiam(pl.LightningModule):
         super().__init__()
         # Compatible with any backbone encoder, just remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feat_dim = timm.create_model("resnet18").get_classifier().in_features
+        feat_dim = self.backbone.num_features
         self.projection_head = SimSiamProjectionHead(feat_dim, 1024, 1024)
         self.prediction_head = SimSiamPredictionHead(1024, 256, 1024)
         self.criterion = NegativeCosineSimilarity()
