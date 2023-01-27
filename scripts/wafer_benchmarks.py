@@ -53,8 +53,10 @@ from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from utils.benchmarking import KNNBenchmarkModule
-from utils.data import *
+from utilities.benchmarking import KNNBenchmarkModule
+from utilities.data import *
+
+torch.set_float32_matmul_precision("high")
 
 # suppress annoying torchmetrics and lightning warnings
 warnings.filterwarnings("ignore", ".*has Tensor cores.*")
@@ -70,7 +72,7 @@ num_workers = os.cpu_count()
 memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 5
+max_epochs = 2
 knn_k = 200
 knn_t = 0.1
 classes = 9
@@ -91,7 +93,7 @@ sync_batchnorm = False
 gather_distributed = False
 
 # benchmark
-n_runs = 3  # optional, increase to create multiple runs and report mean + std
+n_runs = 1  # optional, increase to create multiple runs and report mean + std
 batch_size = 32
 lr_factor = batch_size / 256  #  scales the learning rate linearly with batch size
 
@@ -149,7 +151,13 @@ def get_data_loaders(batch_size: int, model):
         batch_size: Desired batch size for all dataloaders
     """
     col_fn = collate_fn
-    if model == DINOModel:
+    # if the model is any of the DINO models, we use the DINO collate function
+    if (
+        model == DINOModel
+        or model == DINOConvNeXtModel
+        or model == DINOXCiTModel
+        or model == DINOViTModel
+    ):
         col_fn = dino_collate_fn
     elif model == MSNModel:
         col_fn = msn_collate_fn
@@ -489,14 +497,171 @@ class BYOLModel(KNNBenchmarkModule):
 class DINOModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
-        # create a ResNet backbone and remove the classification head
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = timm.create_model("resnet18").get_classifier().in_features
+
+        self.head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+        self.teacher_backbone = copy.deepcopy(self.backbone)
+        self.teacher_head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+
+        utils.deactivate_requires_grad(self.teacher_backbone)
+        utils.deactivate_requires_grad(self.teacher_head)
+
+        self.criterion = lightly.loss.DINOLoss(output_dim=2048)
+
+    def forward(self, x):
+        y = self.backbone(x).flatten(start_dim=1)
+        z = self.head(y)
+        return z
+
+    def forward_teacher(self, x):
+        y = self.teacher_backbone(x).flatten(start_dim=1)
+        z = self.teacher_head(y)
+        return z
+
+    def training_step(self, batch, batch_idx):
+        utils.update_momentum(self.backbone, self.teacher_backbone, m=0.99)
+        utils.update_momentum(self.head, self.teacher_head, m=0.99)
+        views, _, _ = batch
+        views = [view.to(self.device) for view in views]
+        global_views = views[:2]
+        teacher_out = [self.forward_teacher(view) for view in global_views]
+        student_out = [self.forward(view) for view in views]
+        loss = self.criterion(teacher_out, student_out, epoch=self.current_epoch)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        param = list(self.backbone.parameters()) + list(self.head.parameters())
+        optim = torch.optim.SGD(
+            param,
+            lr=6e-2 * lr_factor,
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
+class DINOConvNeXtModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        self.backbone = timm.create_model("convnextv2_nano", num_classes=0)
+        feature_dim = timm.create_model("convnextv2_nano").get_classifier().in_features
+
+        self.head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+        self.teacher_backbone = copy.deepcopy(self.backbone)
+        self.teacher_head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+
+        utils.deactivate_requires_grad(self.teacher_backbone)
+        utils.deactivate_requires_grad(self.teacher_head)
+
+        self.criterion = lightly.loss.DINOLoss(output_dim=2048)
+
+    def forward(self, x):
+        y = self.backbone(x).flatten(start_dim=1)
+        z = self.head(y)
+        return z
+
+    def forward_teacher(self, x):
+        y = self.teacher_backbone(x).flatten(start_dim=1)
+        z = self.teacher_head(y)
+        return z
+
+    def training_step(self, batch, batch_idx):
+        utils.update_momentum(self.backbone, self.teacher_backbone, m=0.99)
+        utils.update_momentum(self.head, self.teacher_head, m=0.99)
+        views, _, _ = batch
+        views = [view.to(self.device) for view in views]
+        global_views = views[:2]
+        teacher_out = [self.forward_teacher(view) for view in global_views]
+        student_out = [self.forward(view) for view in views]
+        loss = self.criterion(teacher_out, student_out, epoch=self.current_epoch)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        param = list(self.backbone.parameters()) + list(self.head.parameters())
+        optim = torch.optim.SGD(
+            param,
+            lr=6e-2 * lr_factor,
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
+class DINOXCiTModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        self.backbone = timm.create_model("xcit_tiny_12_p16_224", num_classes=0)
+        feature_dim = (
+            timm.create_model("xcit_tiny_12_p16_224").get_classifier().in_features
+        )
+
+        self.head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+        self.teacher_backbone = copy.deepcopy(self.backbone)
+        self.teacher_head = heads.DINOProjectionHead(
+            feature_dim, 2048, 256, 2048, batch_norm=True
+        )
+
+        utils.deactivate_requires_grad(self.teacher_backbone)
+        utils.deactivate_requires_grad(self.teacher_head)
+
+        self.criterion = lightly.loss.DINOLoss(output_dim=2048)
+
+    def forward(self, x):
+        y = self.backbone(x).flatten(start_dim=1)
+        z = self.head(y)
+        return z
+
+    def forward_teacher(self, x):
+        y = self.teacher_backbone(x).flatten(start_dim=1)
+        z = self.teacher_head(y)
+        return z
+
+    def training_step(self, batch, batch_idx):
+        utils.update_momentum(self.backbone, self.teacher_backbone, m=0.99)
+        utils.update_momentum(self.head, self.teacher_head, m=0.99)
+        views, _, _ = batch
+        views = [view.to(self.device) for view in views]
+        global_views = views[:2]
+        teacher_out = [self.forward_teacher(view) for view in global_views]
+        student_out = [self.forward(view) for view in views]
+        loss = self.criterion(teacher_out, student_out, epoch=self.current_epoch)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        param = list(self.backbone.parameters()) + list(self.head.parameters())
+        optim = torch.optim.SGD(
+            param,
+            lr=6e-2 * lr_factor,
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
+class DINOViTModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        self.backbone = torch.hub.load(
+            "facebookresearch/dino:main", "dino_vits16", pretrained=False
+        )
+        feature_dim = self.backbone.embed_dim
 
         self.head = heads.DINOProjectionHead(
             feature_dim, 2048, 256, 2048, batch_norm=True
@@ -730,14 +895,17 @@ class MSNModel(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    MSNModel,  # disabled by default because MSN uses larger images with size 224
+    # MSNModel,  # disabled by default because MSN uses larger images with size 224
+    DINOViTModel,
     DINOModel,
-    FastSiamModel,
-    SimSiamModel,
-    SimCLRModel,
-    MocoModel,
-    BarlowTwinsModel,
-    BYOLModel,
+    DINOConvNeXtModel,
+    DINOXCiTModel,
+    # FastSiamModel,
+    # SimSiamModel,
+    # SimCLRModel,
+    # MocoModel,
+    # BarlowTwinsModel,
+    # BYOLModel,
     # DCL,
     # DCLW,
     # # MAEModel, # disabled by default because MAE uses larger images with size 224
