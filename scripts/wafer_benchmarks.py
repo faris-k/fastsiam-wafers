@@ -72,7 +72,7 @@ num_workers = os.cpu_count()
 memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 2
+max_epochs = 1
 knn_k = 200
 knn_t = 0.1
 classes = 9
@@ -143,6 +143,8 @@ msn_collate_fn = WaferMSNCollateFunction(
     random_size=input_size, focal_size=input_size // 2
 )
 
+mae_collate_fn = WaferMAECollateFunction([input_size, input_size])
+
 # %%
 def get_data_loaders(batch_size: int, model):
     """Helper method to create dataloaders for ssl, kNN train and kNN test
@@ -152,17 +154,18 @@ def get_data_loaders(batch_size: int, model):
     """
     col_fn = collate_fn
     # if the model is any of the DINO models, we use the DINO collate function
-    if (
-        model == DINOModel
-        or model == DINOConvNeXtModel
-        or model == DINOXCiTModel
-        or model == DINOViTModel
-    ):
+    if model == DINOModel or model == DINOXCiTModel or model == DINOViTModel:
         col_fn = dino_collate_fn
+    elif model == DINOConvNeXtModel:
+        dino_collate_fn = WaferDINOCOllateFunction(
+            global_crop_size=200, local_crop_size=200 // 2
+        )
     elif model == MSNModel:
         col_fn = msn_collate_fn
     elif model == FastSiamModel:
         col_fn = fastsiam_collate_fn
+    elif model == MAEModel:
+        col_fn = WaferMAECollateFunction([224, 224])
 
     dataloader_train_ssl = DataLoader(
         dataset_train_ssl,
@@ -607,6 +610,11 @@ class DINOXCiTModel(KNNBenchmarkModule):
         feature_dim = (
             timm.create_model("xcit_tiny_12_p16_224").get_classifier().in_features
         )
+        # xcit_small leads to OOM
+        # self.backbone = torch.hub.load(
+        #     "facebookresearch/dino:main", "dino_xcit_small_12_p16", pretrained=False
+        # )
+        # feature_dim = self.backbone.embed_dim
 
         self.head = heads.DINOProjectionHead(
             feature_dim, 2048, 256, 2048, batch_norm=True
@@ -715,7 +723,7 @@ class MAEModel(KNNBenchmarkModule):
         super().__init__(dataloader_kNN, num_classes)
 
         decoder_dim = 512
-        vit = torchvision.models.vit_b_32(pretrained=False)
+        vit = torchvision.models.vit_b_32()
 
         self.warmup_epochs = 40 if max_epochs >= 800 else 20
         self.mask_ratio = 0.75
@@ -895,7 +903,8 @@ class MSNModel(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    # MSNModel,  # disabled by default because MSN uses larger images with size 224
+    MAEModel,  # disabled by default because MAE uses larger images with size 224
+    MSNModel,  # disabled by default because MSN uses larger images with size 224
     DINOViTModel,
     DINOModel,
     DINOConvNeXtModel,
@@ -908,7 +917,6 @@ models = [
     # BYOLModel,
     # DCL,
     # DCLW,
-    # # MAEModel, # disabled by default because MAE uses larger images with size 224
     # MSNModel
     # NNCLRModel,
     # SwaVModel,

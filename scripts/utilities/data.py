@@ -9,38 +9,6 @@ from lightly.transforms.rotation import RandomRotate
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import InterpolationMode
 
-# TODO: try making this work on PIL images instead of arrays
-# class DieNoise:
-#     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
-
-#     Parameters
-#     ----------
-#     p : float, optional
-#         Probability of adding noise on a die-level basis, by default 0.03
-#     """
-
-#     def __init__(self, p: float = 0.03):
-#         self.p = p
-
-#     def __call__(self, sample: torch.Tensor) -> torch.Tensor:
-#         def flip(item):
-#             """
-#             Given a wafermap die, flips pass to fail and vice-versa with probability p.
-#             Does nothing to non-die area (0's if 128's and 255's are passes/fails respectively).
-#             """
-#             prob = np.random.choice([False, True], p=[1 - self.p, self.p])
-#             if prob:
-#                 if item == 128:
-#                     return 255
-#                 elif item == 255:
-#                     return 128
-#                 else:
-#                     return item
-#             return item
-
-#         vflip = np.vectorize(flip)
-#         out = vflip(sample)
-#         return torch.from_numpy(out)
 
 # NEW VERSION 🚀
 class DieNoise(object):
@@ -389,6 +357,43 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
         transforms = [transform] * random_views
         transforms += [focal_transform] * focal_views
         super().__init__(transforms=transforms)
+
+
+class WaferMAECollateFunction(MultiViewCollateFunction):
+    """Implements the view augmentation for MAE.
+    Unlike original paper, no cropping is performed, and we randomly rotate the image by 90 degrees.
+
+    Parameters
+    ----------
+    img_size : List[int], optional
+        Size of the image views, by default [200, 200]
+    rr_prob : float, optional
+        Probability of rotating the image by 90 degrees, by default 0.5
+    hf_prob : float, optional
+        Probability that horizontal flip is applied, by default 0.5
+    """
+
+    def __init__(
+        self,
+        img_size: List[int] = [200, 200],
+        rr_prob: float = 0.5,
+        hf_prob: float = 0.5,
+    ):
+        transforms = [
+            T.ToPILImage(),
+            T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
+            RandomRotate(rr_prob),
+            T.RandomHorizontalFlip(hf_prob),
+            T.Grayscale(num_output_channels=3),
+            T.ToTensor(),
+        ]
+
+        super().__init__([T.Compose(transforms)])
+
+    def forward(self, batch: List[tuple]):
+        views, labels, fnames = super().forward(batch)
+        # Return only first view as MAE needs only a single view per image.
+        return views[0], labels, fnames
 
 
 class WaferMapDataset(Dataset):
