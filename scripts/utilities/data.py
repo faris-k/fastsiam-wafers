@@ -396,6 +396,128 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
         return views[0], labels, fnames
 
 
+class WaferMultiCropCollateFunction(MultiViewCollateFunction):
+    """Implements the multi-crop transformations for SwaV.
+    For wafer maps, the ratio of crops is fixed at 1.0 to keep images square.
+
+    Attributes:
+        crop_sizes:
+            Size of the input image in pixels for each crop category.
+        crop_counts:
+            Number of crops for each crop category.
+        crop_min_scales:
+            Min scales for each crop category.
+        crop_max_scales:
+            Max_scales for each crop category.
+        transforms:
+            Transforms which are applied to all crops.
+    """
+
+    def __init__(
+        self,
+        crop_sizes: List[int],
+        crop_counts: List[int],
+        crop_min_scales: List[float],
+        crop_max_scales: List[float],
+        transforms: T.Compose,
+    ):
+
+        if len(crop_sizes) != len(crop_counts):
+            raise ValueError(
+                "Length of crop_sizes and crop_counts must be equal but are"
+                f" {len(crop_sizes)} and {len(crop_counts)}."
+            )
+        if len(crop_sizes) != len(crop_min_scales):
+            raise ValueError(
+                "Length of crop_sizes and crop_min_scales must be equal but are"
+                f" {len(crop_sizes)} and {len(crop_min_scales)}."
+            )
+        if len(crop_sizes) != len(crop_min_scales):
+            raise ValueError(
+                "Length of crop_sizes and crop_max_scales must be equal but are"
+                f" {len(crop_sizes)} and {len(crop_min_scales)}."
+            )
+
+        crop_transforms = []
+        for i in range(len(crop_sizes)):
+
+            random_resized_crop = T.RandomResizedCrop(
+                crop_sizes[i],
+                scale=(crop_min_scales[i], crop_max_scales[i]),
+                ratio=(1.0, 1.0),
+            )
+
+            crop_transforms.extend(
+                [
+                    T.Compose(
+                        [
+                            transforms,
+                            random_resized_crop,
+                            # T.ToTensor(),
+                        ]
+                    )
+                ]
+                * crop_counts[i]
+            )
+        super().__init__(crop_transforms)
+
+
+class WaferSwaVCollateFunction(WaferMultiCropCollateFunction):
+    """Implements the multi-crop transformations for SwaV training on wafer maps.
+
+    Parameters
+    ----------
+    crop_sizes : List[int], optional
+        Size of the input image in pixels for each crop category, by default [224, 96]
+    crop_counts : List[int], optional
+        Number of crops for each crop category, by default [2, 6]
+    crop_min_scales : List[float], optional
+        Min scales for each crop category, by default [0.6, 0.1]
+    crop_max_scales : List[float], optional
+        Max scales for each crop category, by default [1.0, 0.4]
+    die_noise_prob : float, optional
+        Probability of adding randomized die noise, by default 0.03
+    hf_prob : float, optional
+        Probability of horizontally flipping, by default 0.5
+    vf_prob : float, optional
+        Probability of vertically flipping, by default 0.5
+    rr_prob : float, optional
+        Probability of rotating by 90 degrees, by default 0.5
+    rr_prob2 : float, optional
+        Probability of rotating by some angle between 0 and 90 degrees, by default 0.25
+    """
+
+    def __init__(
+        self,
+        crop_sizes: List[int] = [224, 96],
+        crop_counts: List[int] = [2, 6],
+        crop_min_scales: List[float] = [0.6, 0.1],
+        crop_max_scales: List[float] = [1.0, 0.4],
+        die_noise_prob: float = 0.03,
+        hf_prob: float = 0.5,
+        vf_prob: float = 0.5,
+        rr_prob: float = 0.5,
+        rr_prob2: float = 0.25,
+    ):
+
+        transforms = get_base_transforms(
+            img_size=[crop_sizes[0], crop_sizes[0]],
+            die_noise_prob=die_noise_prob,
+            rr_prob=rr_prob,
+            hf_prob=hf_prob,
+            vf_prob=vf_prob,
+            rr_prob2=rr_prob2,
+        )
+
+        super(WaferSwaVCollateFunction, self).__init__(
+            crop_sizes=crop_sizes,
+            crop_counts=crop_counts,
+            crop_min_scales=crop_min_scales,
+            crop_max_scales=crop_max_scales,
+            transforms=transforms,
+        )
+
+
 class WaferMapDataset(Dataset):
     """Dataset for wafermaps.
 

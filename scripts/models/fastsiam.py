@@ -18,7 +18,7 @@ class FastSiam(pl.LightningModule):
         from timm or torchvision without the last classification head.
     feat_dim : int
         Output dimension of the backbone encoder. For resnet18 this is 512.
-        Trick for timm models: `timm.create_model("resnet18").get_classifier().in_features`.
+        Trick for timm models: `backbone.num_features`.
     rep_dim : int, optional
         Output dimension of SimSiam projection and prediction heads, by default 1024.
         The original paper uses 2048, but we use 1024 here for lower complexity.
@@ -103,8 +103,3 @@ def fastsiam_convnextv2_nano():
     backbone = timm.create_model("convnextv2_nano", num_classes=0)
     model = FastSiam(backbone, 640)
     return model
-
-
-# Easy way to get feat_dim for timm models:
-# timm.create_model("resnet18").get_classifier().in_features
-# Doesn't work for torchvision models or lightly ResNetGenerator

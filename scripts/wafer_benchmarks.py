@@ -27,6 +27,27 @@
 # | SimCLR        |        256 |    800 |              0.858 |  324.8 Min |      3.9 GByte |
 # | SimSiam       |        256 |    800 |              0.852 |  316.0 Min |      3.9 GByte |
 # | SwaV          |        256 |    800 |              0.899 |  554.7 Min |      6.6 GByte |
+"""
+---------------------------------------------------------------------
+| Model         | Batch Size | Epochs |       Time | Peak GPU Usage |
+---------------------------------------------------------------------
+| FastSiam      |         32 |      1 |    1.5 Min |      2.5 GByte |
+| SimSiam       |         32 |      1 |    1.1 Min |      1.4 GByte |
+| SimCLR        |         32 |      1 |    1.0 Min |      1.3 GByte |
+| Moco          |         32 |      1 |    1.2 Min |      1.5 GByte |
+| BarlowTwins   |         32 |      1 |    1.7 Min |      1.6 GByte |
+| BYOL          |         32 |      1 |    1.3 Min |      1.6 GByte |
+| DCLW          |         32 |      1 |    1.1 Min |      1.4 GByte |
+| SwaV          |         32 |      1 |    3.1 Min |      2.3 GByte |
+| DINO          |         32 |      1 |    2.9 Min |      2.5 GByte |
+---------------------------------------------------------------------
+| MAE  ViT-B/32 |         32 |      1 |    1.2 Min |      2.0 GByte |
+| MSN  ViT-S/16 |         32 |      1 |    3.2 Min |      4.9 GByte |
+| DINO ViT-S/16 |         32 |      1 |    4.2 Min |      5.9 GByte |
+| DINO ConvNeXt |         32 |      1 |    5.5 Min |      9.0 GByte |
+| DINO XCiT     |         32 |      1 |    6.6 Min |      6.1 GByte |
+---------------------------------------------------------------------
+"""
 
 import os
 
@@ -76,7 +97,7 @@ max_epochs = 1
 knn_k = 200
 knn_t = 0.1
 classes = 9
-input_size = 200
+input_size = 224
 
 #  Set to True to enable Distributed Data Parallel training.
 distributed = False
@@ -110,7 +131,7 @@ else:
     gpus = min(gpus, 1)
 
 # %%
-df = pd.read_pickle("../data/cleaned_splits/train_1_split.pkl")
+df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
 X_train, X_val, y_train, y_val = train_test_split(
     df.waferMap, df.failureCode, test_size=0.25, random_state=42
 )
@@ -143,7 +164,9 @@ msn_collate_fn = WaferMSNCollateFunction(
     random_size=input_size, focal_size=input_size // 2
 )
 
-mae_collate_fn = WaferMAECollateFunction([input_size, input_size])
+mae_collate_fn = WaferMAECollateFunction([224, 224])
+
+swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
 # %%
 def get_data_loaders(batch_size: int, model):
@@ -157,7 +180,8 @@ def get_data_loaders(batch_size: int, model):
     if model == DINOModel or model == DINOXCiTModel or model == DINOViTModel:
         col_fn = dino_collate_fn
     elif model == DINOConvNeXtModel:
-        dino_collate_fn = WaferDINOCOllateFunction(
+        # ConvNeXt uses high memory, so use smaller resolutions than 224x224
+        col_fn = WaferDINOCOllateFunction(
             global_crop_size=200, local_crop_size=200 // 2
         )
     elif model == MSNModel:
@@ -165,7 +189,9 @@ def get_data_loaders(batch_size: int, model):
     elif model == FastSiamModel:
         col_fn = fastsiam_collate_fn
     elif model == MAEModel:
-        col_fn = WaferMAECollateFunction([224, 224])
+        col_fn = mae_collate_fn
+    elif model == SwaVModel:
+        col_fn = swav_collate_fn
 
     dataloader_train_ssl = DataLoader(
         dataset_train_ssl,
@@ -201,15 +227,8 @@ class MocoModel(KNNBenchmarkModule):
 
         # create a ResNet backbone and remove the classification head
         num_splits = 0 if sync_batchnorm else 8
-        # # TODO: Add split batch norm to the resnet model
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
-
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
 
         # create a moco model based on ResNet
         self.projection_head = heads.MoCoProjectionHead(feature_dim, 2048, 128)
@@ -271,14 +290,8 @@ class SimCLRModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         # create a ResNet backbone and remove the classification head
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
-
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
         self.projection_head = heads.SimCLRProjectionHead(feature_dim, feature_dim, 128)
         self.criterion = lightly.loss.NTXentLoss()
 
@@ -307,13 +320,9 @@ class SimSiamModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         # create a ResNet backbone and remove the classification head
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
+
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
         self.criterion = lightly.loss.NegativeCosineSimilarity()
@@ -348,7 +357,7 @@ class FastSiamModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
         self.criterion = lightly.loss.NegativeCosineSimilarity()
@@ -396,13 +405,8 @@ class BarlowTwinsModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         # create a ResNet backbone and remove the classification head
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
         # use a 2-layer projection head for cifar10 as described in the paper
         self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
 
@@ -435,13 +439,8 @@ class BYOLModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         # create a ResNet backbone and remove the classification head
-        # resnet = torchvision.models.resnet18()
-        # feature_dim = list(resnet.children())[-1].in_features
-        # self.backbone = nn.Sequential(
-        #     *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
-        # )
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
 
         # create a byol model based on ResNet
         self.projection_head = heads.BYOLProjectionHead(feature_dim, 4096, 256)
@@ -501,7 +500,7 @@ class DINOModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
         self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = timm.create_model("resnet18").get_classifier().in_features
+        feature_dim = self.backbone.num_features
 
         self.head = heads.DINOProjectionHead(
             feature_dim, 2048, 256, 2048, batch_norm=True
@@ -900,27 +899,103 @@ class MSNModel(KNNBenchmarkModule):
             )
 
 
+class SwaVModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        # create a ResNet backbone and remove the classification head
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feature_dim = self.backbone.num_features
+
+        self.projection_head = heads.SwaVProjectionHead(feature_dim, 2048, 128)
+        self.prototypes = heads.SwaVPrototypes(128, 512)  # use 512 prototypes
+
+        self.criterion = lightly.loss.SwaVLoss(
+            sinkhorn_gather_distributed=gather_distributed
+        )
+
+    def forward(self, x):
+        x = self.backbone(x).flatten(start_dim=1)
+        x = self.projection_head(x)
+        x = nn.functional.normalize(x, dim=1, p=2)
+        return self.prototypes(x)
+
+    def training_step(self, batch, batch_idx):
+        # normalize the prototypes so they are on the unit sphere
+        self.prototypes.normalize()
+
+        # the multi-crop dataloader returns a list of image crops where the
+        # first two items are the high resolution crops and the rest are low
+        # resolution crops
+        multi_crops, _, _ = batch
+        multi_crop_features = [self.forward(x) for x in multi_crops]
+
+        # split list of crop features into high and low resolution
+        high_resolution_features = multi_crop_features[:2]
+        low_resolution_features = multi_crop_features[2:]
+
+        # calculate the SwaV loss
+        loss = self.criterion(high_resolution_features, low_resolution_features)
+
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        optim = torch.optim.Adam(
+            self.parameters(),
+            lr=1e-3 * lr_factor,
+            weight_decay=1e-6,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
+class DCLW(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        # create a ResNet backbone and remove the classification head
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feature_dim = self.backbone.num_features
+        self.projection_head = heads.SimCLRProjectionHead(feature_dim, feature_dim, 128)
+        self.criterion = lightly.loss.DCLWLoss()
+
+    def forward(self, x):
+        x = self.backbone(x).flatten(start_dim=1)
+        z = self.projection_head(x)
+        return z
+
+    def training_step(self, batch, batch_index):
+        (x0, x1), _, _ = batch
+        z0 = self.forward(x0)
+        z1 = self.forward(x1)
+        loss = self.criterion(z0, z1)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(
+            self.parameters(), lr=6e-2 * lr_factor, momentum=0.9, weight_decay=5e-4
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
 from sklearn.cluster import KMeans
 
 models = [
+    FastSiamModel,
+    SimSiamModel,
+    SimCLRModel,
+    MocoModel,
+    BarlowTwinsModel,
+    BYOLModel,
+    DCLW,
+    SwaVModel,
+    DINOModel,
     MAEModel,  # disabled by default because MAE uses larger images with size 224
     MSNModel,  # disabled by default because MSN uses larger images with size 224
     DINOViTModel,
-    DINOModel,
-    DINOConvNeXtModel,
-    DINOXCiTModel,
-    # FastSiamModel,
-    # SimSiamModel,
-    # SimCLRModel,
-    # MocoModel,
-    # BarlowTwinsModel,
-    # BYOLModel,
-    # DCL,
-    # DCLW,
-    # MSNModel
-    # NNCLRModel,
-    # SwaVModel,
-    # SMoGModel
+    # DINOConvNeXtModel,
+    # DINOXCiTModel,
 ]
 bench_results = dict()
 
