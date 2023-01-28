@@ -93,8 +93,8 @@ num_workers = os.cpu_count()
 memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 1
-knn_k = 200
+max_epochs = 200
+knn_k = 11
 knn_t = 0.1
 classes = 9
 input_size = 224
@@ -982,18 +982,18 @@ class DCLW(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    FastSiamModel,
-    SimSiamModel,
+    # FastSiamModel,
+    MAEModel,
     SimCLRModel,
-    MocoModel,
-    BarlowTwinsModel,
-    BYOLModel,
+    # MocoModel,
+    # BarlowTwinsModel,
+    # BYOLModel,
     DCLW,
-    SwaVModel,
-    DINOModel,
-    MAEModel,  # disabled by default because MAE uses larger images with size 224
-    MSNModel,  # disabled by default because MSN uses larger images with size 224
-    DINOViTModel,
+    # SimSiamModel,
+    # SwaVModel,
+    # DINOModel,
+    # MSNModel,
+    # DINOViTModel,
     # DINOConvNeXtModel,
     # DINOXCiTModel,
 ]
@@ -1044,6 +1044,7 @@ for BenchmarkModel in models:
             val_dataloaders=dataloader_test,
         )
         end = time.time()
+        trainer.validate(benchmark_model, dataloader_test)
         run = {
             "model": model_name,
             "batch_size": batch_size,
