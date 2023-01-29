@@ -1,5 +1,6 @@
 from typing import List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -568,3 +569,66 @@ def get_inference_transforms(img_size: List[int] = [224, 224]):
             T.ToTensor(),
         ]
     )
+
+
+# TODO: scale should be affected by the size of the wafermap
+# choose something more pronounced like 0.5 or 0.6 for a high DPW wafer map
+# and something closer to 0.75+ for a low DPW wafer map
+# maybe randomize bounds of scale but keep bounds dependent on DPW
+def dpw_transform(wafermap, scale: float = 0.75, plot: bool = False):
+    """
+    Transforms a wafer map to a lower DPW version.
+    Works by taking the central coordinates of passing and failing die, then
+    mapping those coordinates to the new wafer map.
+
+    Parameters
+    ----------
+    wafermap : np.ndarray
+        Wafermap to transform
+    scale : float, optional
+        Scale to transform the wafer map, by default 0.75.
+        Must be between 0 and 1.
+    plot : bool, optional
+        Whether to plot the wafer map before and after transformation, by default False
+    """
+    assert 0.0 < scale <= 1.0, "Scale must be between 0 and 1."
+
+    # Calculate the new dimensions of the wafer after scaling down
+    h, w = wafermap.shape
+    new_h = int(h * scale)
+    new_w = int(w * scale)
+    new_dim = (new_h, new_w)
+
+    # Find the indices of the passing elements in the original wafer
+    passing_indices = np.argwhere(wafermap == 128)
+
+    # Find the indices of the failing elements in the original wafer
+    failing_indices = np.argwhere(wafermap == 255)
+
+    # Calculate the relative central coordinate of the passing and failing elements in the original wafer
+    pass_coords = (passing_indices + 0.5) / wafermap.shape
+    fail_coords = (failing_indices + 0.5) / wafermap.shape
+
+    # Calculate the central coordinates of the passing and failing elements in the new wafer map
+    new_pass_coords = (pass_coords * new_dim).astype(int)
+    new_fail_coords = (fail_coords * new_dim).astype(int)
+
+    # Create the (new_h, new_w) wafer map
+    new_wafer = np.zeros(new_dim, dtype=int)
+
+    # Assign the passing elements in the new wafer map
+    new_wafer[new_pass_coords[:, 0], new_pass_coords[:, 1]] = 128
+
+    # Assign the failing elements in the new wafer map
+    new_wafer[new_fail_coords[:, 0], new_fail_coords[:, 1]] = 255
+
+    # Plot the original and new wafer maps side by side
+    if plot:
+        fig, ax = plt.subplots(1, 2)
+        ax[0].imshow(wafermap, aspect=wafermap.shape[1] / wafermap.shape[0])
+        ax[1].imshow(new_wafer, aspect=new_wafer.shape[1] / new_wafer.shape[0])
+        [axi.set_axis_off() for axi in ax.ravel()]
+        plt.subplots_adjust(wspace=0.05, hspace=0)
+        plt.show()
+
+    return new_wafer
