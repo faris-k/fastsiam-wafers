@@ -97,18 +97,14 @@ class KNNBenchmarkModule(pl.LightningModule):
                 self.knn_k,
                 self.knn_t,
             )
-            return (pred_labels, targets)
+            return (pred_labels[:, 0], targets)
 
     def validation_epoch_end(self, outputs):
-        device = self.dummy_param.device
         # Compute classification metrics once we full feature bank
         if outputs:
             # concatenate all predictions and targets
-            all_preds = torch.Tensor([]).to(device)
-            all_targets = torch.Tensor([]).to(device)
-            for (pred_labels, targets) in outputs:
-                all_preds = torch.cat((all_preds, pred_labels[:, 0]), dim=0)
-                all_targets = torch.cat((all_targets, targets), dim=0)
+            all_preds = torch.cat([x[0] for x in outputs], dim=0)
+            all_targets = torch.cat([x[1] for x in outputs], dim=0)
 
             # update metrics
             self.val_accuracy(all_preds, all_targets)

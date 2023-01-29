@@ -94,7 +94,7 @@ memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
 max_epochs = 200
-knn_k = 11
+knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
 knn_t = 0.1
 classes = 9
 input_size = 224
@@ -131,35 +131,35 @@ else:
     gpus = min(gpus, 1)
 
 # %%
+# Create a smaller dataset for benchmarking using one of the training splits
 df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
 X_train, X_val, y_train, y_val = train_test_split(
-    df.waferMap, df.failureCode, test_size=0.25, random_state=42
+    df.waferMap, df.failureCode, test_size=0.2, random_state=42
 )
 
+# SSL training will have no transforms passed to the dataset object; this is handled by collate function
 dataset_train_ssl = LightlyDataset.from_torch_dataset(WaferMapDataset(X_train, y_train))
 
-# we use test transformations for getting the feature for kNN on train data
+# Use inference transforms to get kNN feature bank (dataset_train_kNN) and then evaluate (dataset_test)
 dataset_train_kNN = LightlyDataset.from_torch_dataset(
     WaferMapDataset(X_train, y_train), transform=get_inference_transforms()
 )
-
 dataset_test = LightlyDataset.from_torch_dataset(
     WaferMapDataset(X_val, y_val), transform=get_inference_transforms()
 )
 
 # %%
-# Base collate function for basic joint embedding
-# e.g. SimCLR, MoCo, BYOL, Barlow Twins, or SimSiam
+# Base collate function for basic joint embedding frameworks
+# e.g. SimCLR, MoCo, BYOL, Barlow Twins, DCLW, SimSiam
 collate_fn = WaferImageCollateFunction([input_size, input_size])
 
-# Multi crop augmentation for DINO
+# DINO, FastSiam, MSN, MAE, SwaV all need their own collate functions
 dino_collate_fn = WaferDINOCOllateFunction(
     global_crop_size=input_size, local_crop_size=input_size // 2
 )
 
 fastsiam_collate_fn = WaferFastSiamCollateFunction([input_size, input_size])
 
-# Multi crop augmentation for MSN
 msn_collate_fn = WaferMSNCollateFunction(
     random_size=input_size, focal_size=input_size // 2
 )
@@ -175,6 +175,7 @@ def get_data_loaders(batch_size: int, model):
     Args:
         batch_size: Desired batch size for all dataloaders
     """
+    # By default, use the base collate function
     col_fn = collate_fn
     # if the model is any of the DINO models, we use the DINO collate function
     if model == DINOModel or model == DINOXCiTModel or model == DINOViTModel:
