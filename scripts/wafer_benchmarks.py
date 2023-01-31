@@ -193,7 +193,7 @@ def get_data_loaders(batch_size: int, model):
         )
     elif model == MSNModel:
         col_fn = msn_collate_fn
-    elif model == FastSiamModel:
+    elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
         col_fn = fastsiam_collate_fn
     elif model == MAEModel:
         col_fn = mae_collate_fn
@@ -394,6 +394,50 @@ class FastSiamModel(KNNBenchmarkModule):
         loss = self.criterion(p1, mean)
 
         # Keep a log of the loss
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(
+            self.parameters(),
+            lr=6e-2,  #  no lr-scaling, results in better training stability
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
+
+
+class FastSiamSymmetrizedModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feature_dim = self.backbone.num_features
+        self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
+        self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
+        self.criterion = lightly.loss.NegativeCosineSimilarity()
+
+    def forward(self, x):
+        f = self.backbone(x).flatten(start_dim=1)
+        z = self.projection_head(f)
+        p = self.prediction_head(z)
+        z = z.detach()
+        return z, p
+
+    # Symmetrized loss version
+    def training_step(self, batch, batch_idx):
+        # Unpack augmented views
+        views, _, _ = batch
+
+        zs, ps = zip(*[self.forward(x) for x in views])
+
+        loss = 0
+        for i, z in enumerate(zs):
+            mean = sum(zs[:i] + zs[i + 1 :]) / (len(zs) - 1)
+            p = ps[i]
+            loss += self.criterion(p, mean)
+
+        loss /= len(zs)
         self.log("train_loss_ssl", loss)
         return loss
 
@@ -989,7 +1033,8 @@ class DCLW(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    # FastSiamModel,
+    FastSiamSymmetrizedModel,
+    FastSiamModel,
     # MAEModel,
     # SimCLRModel,
     # MocoModel,

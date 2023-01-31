@@ -79,6 +79,23 @@ class FastSiam(pl.LightningModule):
             self.log("p4 std", std_of_l2_normalized(p4))
         return loss
 
+    # # Symmetrized loss version
+    # def training_step(self, batch, batch_idx):
+    #     # Unpack augmented views
+    #     views, _, _ = batch
+
+    #     zs, ps = zip(*[self.forward(x) for x in views])
+
+    #     loss = 0
+    #     for i, z in enumerate(zs):
+    #         mean = sum(zs[:i] + zs[i+1:]) / (len(zs) - 1)
+    #         p = ps[i]
+    #         loss += self.criterion(p, mean)
+
+    #     loss /= len(zs)
+    #     self.log("loss", loss)
+    #     return loss
+
     def configure_optimizers(self):
         # FastSiam authors use lr=0.125 (?!), SimSiam would use 0.00625 here. 0.06 is a happy medium :)
         optim = torch.optim.SGD(self.parameters(), lr=0.06)
