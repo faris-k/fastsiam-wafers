@@ -47,6 +47,12 @@
 | DINO ConvNeXt |         32 |      1 |    5.5 Min |      9.0 GByte |
 | DINO XCiT     |         32 |      1 |    6.6 Min |      6.1 GByte |
 ---------------------------------------------------------------------
+
+---------------------------------------------------------------------------------------------------------------
+| Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
+---------------------------------------------------------------------------------------------------------------
+| MSN           |         32 |    200 |              0.482 |              0.470 |  785.3 Min |      6.4 GByte |
+---------------------------------------------------------------------------------------------------------------
 """
 
 import os
@@ -984,16 +990,16 @@ from sklearn.cluster import KMeans
 
 models = [
     # FastSiamModel,
-    MAEModel,
-    SimCLRModel,
+    # MAEModel,
+    # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
     # BYOLModel,
-    DCLW,
+    # DCLW,
     # SimSiamModel,
     # SwaVModel,
     # DINOModel,
-    # MSNModel,
+    MSNModel,
     # DINOViTModel,
     # DINOConvNeXtModel,
     # DINOXCiTModel,
