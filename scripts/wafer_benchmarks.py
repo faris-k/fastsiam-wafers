@@ -71,11 +71,11 @@ import pytorch_lightning as pl
 import timm
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
 from lightly.data import LightlyDataset
-from lightly.models import modules, utils
+from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
-from lightly.utils.debug import std_of_l2_normalized
 from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
@@ -154,6 +154,11 @@ dataset_test = LightlyDataset.from_torch_dataset(
     WaferMapDataset(X_val, y_val), transform=get_inference_transforms()
 )
 
+# For supervised baseline, just use WaferMapDataset with base transforms
+dataset_train_supervised = WaferMapDataset(
+    X_train, y_train, transform=get_base_transforms()
+)
+
 # %%
 # Base collate function for basic joint embedding frameworks
 # e.g. SimCLR, MoCo, BYOL, Barlow Twins, DCLW, SimSiam
@@ -200,13 +205,23 @@ def get_data_loaders(batch_size: int, model):
     elif model == SwaVModel:
         col_fn = swav_collate_fn
 
-    dataloader_train_ssl = DataLoader(
-        dataset_train_ssl,
-        batch_size=batch_size,
-        shuffle=True,
-        collate_fn=col_fn,
-        drop_last=True,
-        # num_workers=num_workers,
+    dataloader_train_ssl = (
+        DataLoader(
+            dataset_train_ssl,
+            batch_size=batch_size,
+            shuffle=True,
+            collate_fn=col_fn,
+            drop_last=True,
+            # num_workers=num_workers,
+        )
+        if model != SupervisedR18
+        else DataLoader(
+            dataset_train_supervised,
+            batch_size=batch_size,
+            shuffle=True,
+            drop_last=True,
+            # num_workers=num_workers,
+        )
     )
 
     dataloader_train_kNN = DataLoader(
@@ -226,6 +241,29 @@ def get_data_loaders(batch_size: int, model):
     )
 
     return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
+
+
+class SupervisedR18(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        self.fc = timm.create_model("resnet18", num_classes=9).get_classifier()
+
+    def forward(self, x):
+        f = self.backbone(x).flatten(start_dim=1)
+        p = self.fc(f)
+        return F.log_softmax(p, dim=1)
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self.forward(x)
+        loss = F.nll_loss(logits, y)
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        optim = torch.optim.AdamW(self.parameters())
+        return optim
 
 
 class MocoModel(KNNBenchmarkModule):
@@ -1033,8 +1071,9 @@ class DCLW(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    FastSiamSymmetrizedModel,
-    FastSiamModel,
+    SupervisedR18,
+    # FastSiamSymmetrizedModel,
+    # FastSiamModel,
     # MAEModel,
     # SimCLRModel,
     # MocoModel,
@@ -1044,7 +1083,7 @@ models = [
     # SimSiamModel,
     # SwaVModel,
     # DINOModel,
-    MSNModel,
+    # MSNModel,
     # DINOViTModel,
     # DINOConvNeXtModel,
     # DINOXCiTModel,
@@ -1062,6 +1101,9 @@ for BenchmarkModel in models:
             batch_size=batch_size,
             model=BenchmarkModel,
         )
+        # if model_name == "SupervisedR18":
+        #     # supervised model does not need a dataloader for kNN
+        #     dataloader_train_ssl = dataloader_train_kNN
         benchmark_model = BenchmarkModel(dataloader_train_kNN, classes)
 
         # Save logs to: {CWD}/benchmark_logs/cifar10/{experiment_version}/{model_name}/
