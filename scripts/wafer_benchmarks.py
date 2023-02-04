@@ -138,7 +138,11 @@ else:
 
 # %%
 # Create a smaller dataset for benchmarking using one of the training splits
-df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
+# df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
+df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
+df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
+df = pd.concat([df_train, df_val], axis=0)
+print(df.shape)
 X_train, X_val, y_train, y_val = train_test_split(
     df.waferMap, df.failureCode, test_size=0.2, random_state=42
 )
@@ -175,7 +179,7 @@ msn_collate_fn = WaferMSNCollateFunction(
     random_size=input_size, focal_size=input_size // 2
 )
 
-mae_collate_fn = WaferMAECollateFunction([224, 224])
+mae_collate_fn = WaferMAECollateFunction([224, 224], 0.0, 0.0)
 
 swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
@@ -196,7 +200,7 @@ def get_data_loaders(batch_size: int, model):
         col_fn = WaferDINOCOllateFunction(
             global_crop_size=200, local_crop_size=200 // 2
         )
-    elif model == MSNModel:
+    elif model == MSNModel or model == MSNViTModel:
         col_fn = msn_collate_fn
     elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
         col_fn = fastsiam_collate_fn
@@ -988,6 +992,97 @@ class MSNModel(KNNBenchmarkModule):
             )
 
 
+class MSNViTModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes):
+        super().__init__(dataloader_kNN, num_classes)
+
+        self.warmup_epochs = 15
+        #  ViT small configuration (ViT-S/16) = dict(patch_size=16, embed_dim=384, depth=12, num_heads=6)
+        #  ViT tiny configuration (ViT-T/16) = dict(patch_size=16, embed_dim=192, depth=12, num_heads=3)
+        self.mask_ratio = 0.5
+        # self.backbone = masked_autoencoder.MAEBackbone(
+        #     image_size=224,
+        #     patch_size=16,
+        #     num_layers=12,
+        #     num_heads=6,
+        #     hidden_dim=384,
+        #     mlp_dim=384 * 4,
+        # )
+        vit = torchvision.models.vit_b_32()
+        self.backbone = masked_autoencoder.MAEBackbone.from_vit(vit)
+        self.projection_head = heads.MSNProjectionHead(768)
+
+        self.anchor_backbone = copy.deepcopy(self.backbone)
+        self.anchor_projection_head = copy.deepcopy(self.projection_head)
+
+        utils.deactivate_requires_grad(self.backbone)
+        utils.deactivate_requires_grad(self.projection_head)
+
+        self.prototypes = nn.Linear(256, 1024, bias=False).weight
+        self.criterion = lightly.loss.MSNLoss()
+
+    def training_step(self, batch, batch_idx):
+        utils.update_momentum(self.anchor_backbone, self.backbone, 0.996)
+        utils.update_momentum(self.anchor_projection_head, self.projection_head, 0.996)
+
+        views, _, _ = batch
+        views = [view.to(self.device, non_blocking=True) for view in views]
+        targets = views[0]
+        anchors = views[1]
+        anchors_focal = torch.concat(views[2:], dim=0)
+
+        targets_out = self.backbone(targets)
+        targets_out = self.projection_head(targets_out)
+        anchors_out = self.encode_masked(anchors)
+        anchors_focal_out = self.encode_masked(anchors_focal)
+        anchors_out = torch.cat([anchors_out, anchors_focal_out], dim=0)
+
+        loss = self.criterion(anchors_out, targets_out, self.prototypes.data)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def encode_masked(self, anchors):
+        batch_size, _, _, width = anchors.shape
+        seq_length = (width // self.anchor_backbone.patch_size) ** 2
+        idx_keep, _ = utils.random_token_mask(
+            size=(batch_size, seq_length),
+            mask_ratio=self.mask_ratio,
+            device=self.device,
+        )
+        out = self.anchor_backbone(anchors, idx_keep)
+        return self.anchor_projection_head(out)
+
+    def configure_optimizers(self):
+        params = [
+            *list(self.anchor_backbone.parameters()),
+            *list(self.anchor_projection_head.parameters()),
+            self.prototypes,
+        ]
+        optim = torch.optim.AdamW(
+            params=params,
+            lr=1.5e-4 * lr_factor,
+            weight_decay=0.05,
+            betas=(0.9, 0.95),
+        )
+        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optim, self.scale_lr
+        )
+        return [optim], [cosine_with_warmup_scheduler]
+
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
+
+
 class SwaVModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes):
         super().__init__(dataloader_kNN, num_classes)
@@ -1071,10 +1166,10 @@ class DCLW(KNNBenchmarkModule):
 from sklearn.cluster import KMeans
 
 models = [
-    SupervisedR18,
+    # SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
-    # MAEModel,
+    MAEModel,
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
@@ -1084,6 +1179,7 @@ models = [
     # SwaVModel,
     # DINOModel,
     # MSNModel,
+    # MSNViTModel,
     # DINOViTModel,
     # DINOConvNeXtModel,
     # DINOXCiTModel,
