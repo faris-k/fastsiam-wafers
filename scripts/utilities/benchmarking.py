@@ -47,7 +47,7 @@ class KNNBenchmarkModule(pl.LightningModule):
         self,
         dataloader_kNN: DataLoader,
         num_classes: int,
-        knn_k: int = 200,
+        knn_k: int = 27,  # TODO: find a good default value, 200 is too high for class imbalance
         knn_t: float = 0.1,
     ):
         super().__init__()
@@ -120,3 +120,9 @@ class KNNBenchmarkModule(pl.LightningModule):
             # log metrics
             self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
             self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)
+
+    def predict_step(self, batch, batch_idx):
+        # Recommended usage: preds = trainer.predict(model, dataloader)
+        # preds = torch.cat(preds, dim=0)
+        images, _, _ = batch
+        return self.backbone(images)

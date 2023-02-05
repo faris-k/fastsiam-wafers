@@ -99,6 +99,9 @@ import torchvision
 from lightly.data import LightlyDataset
 from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
+from lightly.utils import scheduler
+
+# from pl_bolts.optimizers.lars import LARS  # TODO: once pl_bolts is updated, use this, currently whole package is broken
 from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
@@ -161,11 +164,11 @@ else:
 
 # %%
 # Create a smaller dataset for benchmarking using one of the training splits
-# df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
-df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
-df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
-df = pd.concat([df_train, df_val], axis=0)
-print(df.shape)
+df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
+# df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
+# df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
+# df = pd.concat([df_train, df_val], axis=0)
+# print(df.shape)
 X_train, X_val, y_train, y_val = train_test_split(
     df.waferMap, df.failureCode, test_size=0.2, random_state=42
 )
@@ -271,8 +274,8 @@ def get_data_loaders(batch_size: int, model):
 
 
 class SupervisedR18(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0)
         self.fc = timm.create_model("resnet18", num_classes=9).get_classifier()
 
@@ -294,8 +297,8 @@ class SupervisedR18(KNNBenchmarkModule):
 
 
 class MocoModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
 
         # create a ResNet backbone and remove the classification head
         num_splits = 0 if sync_batchnorm else 8
@@ -359,8 +362,8 @@ class MocoModel(KNNBenchmarkModule):
 
 
 class SimCLRModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
@@ -389,8 +392,8 @@ class SimCLRModel(KNNBenchmarkModule):
 
 
 class SimSiamModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
 
         self.backbone = timm.create_model("resnet18", num_classes=0)
@@ -426,8 +429,8 @@ class SimSiamModel(KNNBenchmarkModule):
 
 
 class FastSiamModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
@@ -474,8 +477,8 @@ class FastSiamModel(KNNBenchmarkModule):
 
 
 class FastSiamSymmetrizedModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
@@ -518,8 +521,8 @@ class FastSiamSymmetrizedModel(KNNBenchmarkModule):
 
 
 class BarlowTwinsModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
@@ -552,8 +555,8 @@ class BarlowTwinsModel(KNNBenchmarkModule):
 
 
 class BYOLModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
@@ -613,8 +616,8 @@ class BYOLModel(KNNBenchmarkModule):
 
 
 class DINOModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
 
@@ -666,8 +669,8 @@ class DINOModel(KNNBenchmarkModule):
 
 
 class DINOConvNeXtModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("convnextv2_nano", num_classes=0)
         feature_dim = timm.create_model("convnextv2_nano").get_classifier().in_features
 
@@ -719,8 +722,8 @@ class DINOConvNeXtModel(KNNBenchmarkModule):
 
 
 class DINOXCiTModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("xcit_tiny_12_p16_224", num_classes=0)
         feature_dim = (
             timm.create_model("xcit_tiny_12_p16_224").get_classifier().in_features
@@ -779,8 +782,8 @@ class DINOXCiTModel(KNNBenchmarkModule):
 
 
 class DINOViTModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = torch.hub.load(
             "facebookresearch/dino:main", "dino_vits16", pretrained=False
         )
@@ -834,8 +837,8 @@ class DINOViTModel(KNNBenchmarkModule):
 
 
 class MAEModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
 
         decoder_dim = 512
         vit = torchvision.models.vit_b_32()
@@ -907,28 +910,15 @@ class MAEModel(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optim, self.scale_lr
+        cosine_scheduler = scheduler.CosineWarmupScheduler(
+            optim, self.warmup_epochs, max_epochs
         )
-        return [optim], [cosine_with_warmup_scheduler]
-
-    def scale_lr(self, epoch):
-        if epoch < self.warmup_epochs:
-            return epoch / self.warmup_epochs
-        else:
-            return 0.5 * (
-                1.0
-                + math.cos(
-                    math.pi
-                    * (epoch - self.warmup_epochs)
-                    / (max_epochs - self.warmup_epochs)
-                )
-            )
+        return [optim], [cosine_scheduler]
 
 
 class MSNModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
 
         self.warmup_epochs = 15
         #  ViT small configuration (ViT-S/16) = dict(patch_size=16, embed_dim=384, depth=12, num_heads=6)
@@ -996,28 +986,15 @@ class MSNModel(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optim, self.scale_lr
+        cosine_scheduler = scheduler.CosineWarmupScheduler(
+            optim, self.warmup_epochs, max_epochs
         )
-        return [optim], [cosine_with_warmup_scheduler]
-
-    def scale_lr(self, epoch):
-        if epoch < self.warmup_epochs:
-            return epoch / self.warmup_epochs
-        else:
-            return 0.5 * (
-                1.0
-                + math.cos(
-                    math.pi
-                    * (epoch - self.warmup_epochs)
-                    / (max_epochs - self.warmup_epochs)
-                )
-            )
+        return [optim], [cosine_scheduler]
 
 
 class MSNViTModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
 
         self.warmup_epochs = 15
         #  ViT small configuration (ViT-S/16) = dict(patch_size=16, embed_dim=384, depth=12, num_heads=6)
@@ -1087,28 +1064,15 @@ class MSNViTModel(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optim, self.scale_lr
+        cosine_scheduler = scheduler.CosineWarmupScheduler(
+            optim, self.warmup_epochs, max_epochs
         )
-        return [optim], [cosine_with_warmup_scheduler]
-
-    def scale_lr(self, epoch):
-        if epoch < self.warmup_epochs:
-            return epoch / self.warmup_epochs
-        else:
-            return 0.5 * (
-                1.0
-                + math.cos(
-                    math.pi
-                    * (epoch - self.warmup_epochs)
-                    / (max_epochs - self.warmup_epochs)
-                )
-            )
+        return [optim], [cosine_scheduler]
 
 
 class SwaVModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
@@ -1157,8 +1121,8 @@ class SwaVModel(KNNBenchmarkModule):
 
 
 class DCLW(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes):
-        super().__init__(dataloader_kNN, num_classes)
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
         self.backbone = timm.create_model("resnet18", num_classes=0)
         feature_dim = self.backbone.num_features
@@ -1186,19 +1150,54 @@ class DCLW(KNNBenchmarkModule):
         return [optim], [scheduler]
 
 
-from sklearn.cluster import KMeans
+class VICRegModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
+        # create a ResNet backbone and remove the classification head
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feature_dim = self.backbone.num_features
+        self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
+        self.criterion = lightly.loss.VICRegLoss()
+        self.warmup_epochs = 40 if max_epochs >= 800 else 20
+
+    def forward(self, x):
+        x = self.backbone(x).flatten(start_dim=1)
+        z = self.projection_head(x)
+        return z
+
+    def training_step(self, batch, batch_index):
+        (x0, x1), _, _ = batch
+        z0 = self.forward(x0)
+        z1 = self.forward(x1)
+        loss = self.criterion(z0, z1)
+        return loss
+
+    def configure_optimizers(self):
+        # Training diverges without LARS
+        optim = LARS(
+            self.parameters(),
+            lr=0.3 * lr_factor,
+            weight_decay=1e-4,
+            momentum=0.9,
+        )
+        cosine_scheduler = scheduler.CosineWarmupScheduler(
+            optim, self.warmup_epochs, max_epochs
+        )
+        return [optim], [cosine_scheduler]
+
 
 models = [
     # SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
-    MAEModel,
+    # MAEModel,
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
     # BYOLModel,
     # DCLW,
     # SimSiamModel,
+    # VICRegModel,
     # SwaVModel,
     # DINOModel,
     # MSNModel,
@@ -1223,7 +1222,11 @@ for BenchmarkModel in models:
         # if model_name == "SupervisedR18":
         #     # supervised model does not need a dataloader for kNN
         #     dataloader_train_ssl = dataloader_train_kNN
-        benchmark_model = BenchmarkModel(dataloader_train_kNN, classes)
+        benchmark_model = BenchmarkModel(dataloader_train_kNN, classes, knn_k=knn_k)
+        print("knn_k", benchmark_model.knn_k)
+        if benchmark_model.knn_k != knn_k:
+            print("ERROR with model", model_name)
+            break
 
         # Save logs to: {CWD}/benchmark_logs/cifar10/{experiment_version}/{model_name}/
         # If multiple runs are specified a subdirectory for each run is created.
