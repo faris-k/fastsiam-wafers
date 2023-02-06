@@ -1190,21 +1190,21 @@ class DCLW(KNNBenchmarkModule):
 
 models = [
     SupervisedR18,
-    # FastSiamSymmetrizedModel,
-    # FastSiamModel,
-    # MAEModel,
-    # SimCLRModel,
-    # MocoModel,
-    # BarlowTwinsModel,
-    # BYOLModel,
-    # DCLW,
-    # SimSiamModel,
+    FastSiamSymmetrizedModel,
+    FastSiamModel,
+    MAEModel,
+    SimCLRModel,
+    MocoModel,
+    BarlowTwinsModel,
+    BYOLModel,
+    DCLW,
+    SimSiamModel,
     # VICRegModel,
-    # SwaVModel,
-    # DINOModel,
-    # MSNModel,
-    # MSNViTModel,
-    # DINOViTModel,
+    SwaVModel,
+    DINOModel,
+    MSNModel,
+    MSNViTModel,
+    DINOViTModel,
     # DINOConvNeXtModel,
     # DINOXCiTModel,
 ]
@@ -1221,14 +1221,7 @@ for BenchmarkModel in models:
             batch_size=batch_size,
             model=BenchmarkModel,
         )
-        # if model_name == "SupervisedR18":
-        #     # supervised model does not need a dataloader for kNN
-        #     dataloader_train_ssl = dataloader_train_kNN
         benchmark_model = BenchmarkModel(dataloader_train_kNN, classes, knn_k=knn_k)
-        print("knn_k", benchmark_model.knn_k)
-        if benchmark_model.knn_k != knn_k:
-            print("ERROR with model", model_name)
-            break
 
         # Save logs to: {CWD}/benchmark_logs/cifar10/{experiment_version}/{model_name}/
         # If multiple runs are specified a subdirectory for each run is created.
