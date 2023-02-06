@@ -1,12 +1,20 @@
+import io
+
+import matplotlib.pyplot as plt
 import pytorch_lightning as pl
-import timm
+import seaborn as sns
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 from lightly.utils import knn_predict
+from PIL import Image
 from torch.utils.data import DataLoader
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
+from torchmetrics.classification import (
+    MulticlassAccuracy,
+    MulticlassConfusionMatrix,
+    MulticlassF1Score,
+)
+from torchvision.transforms.functional import to_tensor
 
 
 # modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
@@ -47,7 +55,7 @@ class KNNBenchmarkModule(pl.LightningModule):
         self,
         dataloader_kNN: DataLoader,
         num_classes: int,
-        knn_k: int = 27,  # TODO: find a good default value, 200 is too high for class imbalance
+        knn_k: int = 25,  # TODO: find a good default value, 200 is too high for class imbalance
         knn_t: float = 0.1,
     ):
         super().__init__()
@@ -63,8 +71,14 @@ class KNNBenchmarkModule(pl.LightningModule):
         self.val_accuracy = MulticlassAccuracy(num_classes=num_classes, average="macro")
         self.val_f1 = MulticlassF1Score(num_classes=num_classes, average="macro")
 
+        # After training, we will compute a confusion matrix
+        self.confusion_matrix = []
+
         # create dummy param to keep track of the device the model is using
         self.dummy_param = nn.Parameter(torch.empty(0))
+
+        # Create a feature bank history which contains the feature bank of each epoch
+        self.feature_bank_history = []
 
     def training_epoch_end(self, outputs):
         # update feature bank at the end of each training epoch
@@ -82,6 +96,10 @@ class KNNBenchmarkModule(pl.LightningModule):
                 self.targets_bank.append(target)
         self.feature_bank = torch.cat(self.feature_bank, dim=0).t().contiguous()
         self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
+
+        # At every epoch, also keep a historical record of the feature_bank
+        self.feature_bank_history.append(self.feature_bank.t())
+
         self.backbone.train()
 
     def validation_step(self, batch, batch_idx):
@@ -120,6 +138,54 @@ class KNNBenchmarkModule(pl.LightningModule):
             # log metrics
             self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
             self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)
+
+            # log confusion matrix: https://stackoverflow.com/a/73388839
+            confusion_matrix = MulticlassConfusionMatrix(
+                num_classes=self.num_classes, normalize="true"
+            ).to(all_preds.device)
+            confusion_matrix(all_preds, all_targets)
+
+            computed_confusion_matrix = (
+                confusion_matrix.compute().detach().cpu().numpy()
+            )
+            self.confusion_matrix.append(computed_confusion_matrix)
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.heatmap(
+                computed_confusion_matrix,
+                annot=True,
+                cmap=sns.cubehelix_palette(start=0, light=0.97, as_cmap=True),
+                square=True,
+                linewidths=1,
+                fmt=".2f",
+                ax=ax,
+            )
+            # Add axis labels
+            ax.set_xlabel("Predicted Label", fontsize=14)
+            ax.set_ylabel("True Label", fontsize=14)
+            # ax.legend(
+            #     ["Predicted", "True"],
+            #     loc="upper right",
+            #     bbox_to_anchor=(1.5, 1.0),
+            #     ncol=1,
+            # )
+            buf = io.BytesIO()
+
+            plt.savefig(buf, format="jpeg", bbox_inches="tight")
+            buf.seek(0)
+            image = Image.open(buf)
+            image = to_tensor(image)
+            self.logger.experiment.add_image(
+                "Confusion Matrix",
+                image,
+                self.current_epoch,
+            )
+
+            # close and clear figure and buffer
+            plt.close(fig)
+            plt.clf()
+            buf.close()
+            del fig, ax, buf, image
 
     def predict_step(self, batch, batch_idx):
         # Recommended usage: preds = trainer.predict(model, dataloader)

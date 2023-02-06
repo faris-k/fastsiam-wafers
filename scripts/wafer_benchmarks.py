@@ -117,6 +117,7 @@ warnings.filterwarnings("ignore", ".*interpolation.*")
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 warnings.filterwarnings("ignore", ".*meaningless.*")
 warnings.filterwarnings("ignore", ".*log_every_n_steps.*")
+warnings.filterwarnings("ignore", ".*confusion.*")
 
 # %%
 logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
@@ -184,9 +185,10 @@ dataset_test = LightlyDataset.from_torch_dataset(
     WaferMapDataset(X_val, y_val), transform=get_inference_transforms()
 )
 
-# For supervised baseline, just use WaferMapDataset with base transforms
-dataset_train_supervised = WaferMapDataset(
-    X_train, y_train, transform=get_base_transforms()
+# For supervised baseline, pass base transforms since no collate function will be used
+dataset_train_supervised = LightlyDataset.from_torch_dataset(
+    WaferMapDataset(X_train, y_train),
+    transform=get_base_transforms(img_size=[224, 224]),
 )
 
 # %%
@@ -285,7 +287,7 @@ class SupervisedR18(KNNBenchmarkModule):
         return F.log_softmax(p, dim=1)
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, _ = batch
         logits = self.forward(x)
         loss = F.nll_loss(logits, y)
         self.log("train_loss", loss, prog_bar=True)
@@ -1150,44 +1152,44 @@ class DCLW(KNNBenchmarkModule):
         return [optim], [scheduler]
 
 
-class VICRegModel(KNNBenchmarkModule):
-    def __init__(self, dataloader_kNN, num_classes, **kwargs):
-        super().__init__(dataloader_kNN, num_classes, **kwargs)
-        # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model("resnet18", num_classes=0)
-        feature_dim = self.backbone.num_features
-        self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
-        self.criterion = lightly.loss.VICRegLoss()
-        self.warmup_epochs = 40 if max_epochs >= 800 else 20
+# class VICRegModel(KNNBenchmarkModule):
+#     def __init__(self, dataloader_kNN, num_classes, **kwargs):
+#         super().__init__(dataloader_kNN, num_classes, **kwargs)
+#         # create a ResNet backbone and remove the classification head
+#         self.backbone = timm.create_model("resnet18", num_classes=0)
+#         feature_dim = self.backbone.num_features
+#         self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
+#         self.criterion = lightly.loss.VICRegLoss()
+#         self.warmup_epochs = 40 if max_epochs >= 800 else 20
 
-    def forward(self, x):
-        x = self.backbone(x).flatten(start_dim=1)
-        z = self.projection_head(x)
-        return z
+#     def forward(self, x):
+#         x = self.backbone(x).flatten(start_dim=1)
+#         z = self.projection_head(x)
+#         return z
 
-    def training_step(self, batch, batch_index):
-        (x0, x1), _, _ = batch
-        z0 = self.forward(x0)
-        z1 = self.forward(x1)
-        loss = self.criterion(z0, z1)
-        return loss
+#     def training_step(self, batch, batch_index):
+#         (x0, x1), _, _ = batch
+#         z0 = self.forward(x0)
+#         z1 = self.forward(x1)
+#         loss = self.criterion(z0, z1)
+#         return loss
 
-    def configure_optimizers(self):
-        # Training diverges without LARS
-        optim = LARS(
-            self.parameters(),
-            lr=0.3 * lr_factor,
-            weight_decay=1e-4,
-            momentum=0.9,
-        )
-        cosine_scheduler = scheduler.CosineWarmupScheduler(
-            optim, self.warmup_epochs, max_epochs
-        )
-        return [optim], [cosine_scheduler]
+#     def configure_optimizers(self):
+#         # Training diverges without LARS
+#         optim = LARS(
+#             self.parameters(),
+#             lr=0.3 * lr_factor,
+#             weight_decay=1e-4,
+#             momentum=0.9,
+#         )
+#         cosine_scheduler = scheduler.CosineWarmupScheduler(
+#             optim, self.warmup_epochs, max_epochs
+#         )
+#         return [optim], [cosine_scheduler]
 
 
 models = [
-    # SupervisedR18,
+    SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
     # MAEModel,
@@ -1260,11 +1262,12 @@ for BenchmarkModel in models:
             val_dataloaders=dataloader_test,
         )
         end = time.time()
-        trainer.validate(benchmark_model, dataloader_test)
+        # trainer.validate(benchmark_model, dataloader_test)
+        # get the number of epochs the trainer actually ran
         run = {
             "model": model_name,
             "batch_size": batch_size,
-            "epochs": max_epochs,
+            "epochs": trainer.current_epoch + 1,
             "max_accuracy": benchmark_model.max_accuracy,
             "max_f1": benchmark_model.max_f1,
             "runtime": end - start,
@@ -1298,6 +1301,8 @@ for model, results in bench_results.items():
     f1 = np.array([result["max_f1"] for result in results])
     gpu_memory_usage = np.array([result["gpu_memory_usage"] for result in results])
     gpu_memory_usage = gpu_memory_usage.max() / (1024**3)  #  convert to gbyte
+    epochs = np.array([result["epochs"] for result in results])
+    epochs = int(epochs.mean())
 
     if len(accuracy) > 1:
         accuracy_msg = f"{accuracy.mean():>8.3f} +- {accuracy.std():>4.3f}"
@@ -1309,7 +1314,7 @@ for model, results in bench_results.items():
         f1_msg = f"{f1.mean():>18.3f}"
 
     print(
-        f"| {model:<13} | {batch_size:>10} | {max_epochs:>6} "
+        f"| {model:<13} | {batch_size:>10} | {epochs:>6} "
         f"| {accuracy_msg} | {f1_msg} | {runtime:>6.1f} Min "
         f"| {gpu_memory_usage:>8.1f} GByte |",
         flush=True,
