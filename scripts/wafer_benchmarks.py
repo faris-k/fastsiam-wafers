@@ -76,6 +76,16 @@ Still, the results are comparable to the GTX 1080 Ti run.
 ---------------------------------------------------------------------------------------------------------
 | MSN           |         32 |    200 |              0.482 |        0.470 |  785.3 Min |      6.4 GByte |
 ---------------------------------------------------------------------------------------------------------
+
+Re-running benchmarks since knn_k wasn't being used properly.
+The following is on a GTX 1080 Ti.
+
+The following is on an RTX 3080 Ti.
+---------------------------------------------------------------------------------------------------------------
+| Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
+---------------------------------------------------------------------------------------------------------------
+| DINO          |         32 |    201 |              0.555 |              0.562 |  721.0 Min |      6.5 GByte |
+---------------------------------------------------------------------------------------------------------------
 """
 
 import os
@@ -1189,24 +1199,24 @@ class DCLW(KNNBenchmarkModule):
 
 
 models = [
-    SupervisedR18,
-    FastSiamSymmetrizedModel,
-    FastSiamModel,
-    MAEModel,
-    SimCLRModel,
-    MocoModel,
-    BarlowTwinsModel,
-    BYOLModel,
-    DCLW,
-    SimSiamModel,
-    # VICRegModel,
-    SwaVModel,
+    # SupervisedR18,
+    # FastSiamSymmetrizedModel,
+    # FastSiamModel,
+    # MAEModel,
+    # SimCLRModel,
+    # MocoModel,
+    # BarlowTwinsModel,
+    # BYOLModel,
+    # DCLW,
+    # SimSiamModel,
+    # # VICRegModel,
+    # SwaVModel,
     DINOModel,
-    MSNModel,
-    MSNViTModel,
-    DINOViTModel,
-    # DINOConvNeXtModel,
-    # DINOXCiTModel,
+    # MSNModel,
+    # MSNViTModel,
+    # DINOViTModel,
+    # # DINOConvNeXtModel,
+    # # DINOXCiTModel,
 ]
 bench_results = dict()
 
@@ -1260,7 +1270,7 @@ for BenchmarkModel in models:
         run = {
             "model": model_name,
             "batch_size": batch_size,
-            "epochs": trainer.current_epoch + 1,
+            "epochs": trainer.current_epoch,
             "max_accuracy": benchmark_model.max_accuracy,
             "max_f1": benchmark_model.max_f1,
             "runtime": end - start,
