@@ -1,32 +1,4 @@
-# %% [markdown]
 # Adapted from https://github.com/lightly-ai/lightly/blob/master/docs/source/getting_started/benchmarks/imagenette_benchmark.py
-#
-# | Model         | Batch Size | Epochs |  KNN Test Accuracy |       Time | Peak GPU Usage |
-# |---------------|------------|--------|--------------------|------------|----------------|
-# | BarlowTwins   |        256 |    200 |              0.587 |   86.2 Min |      4.0 GByte |
-# | BYOL          |        256 |    200 |              0.619 |   88.6 Min |      4.3 GByte |
-# | DCL (*)       |        256 |    200 |              0.762 |   53.3 Min |      4.3 GByte |
-# | DCLW (*)      |        256 |    200 |              0.755 |   53.7 Min |      4.3 GByte |
-# | DINO (Res18)  |        256 |    200 |              0.736 |   86.5 Min |      4.1 GByte |
-# | MSN (ViT-S)   |        256 |    200 |              0.741 |   92.7 Min |     16.3 GByte |
-# | Moco          |        256 |    200 |              0.727 |   87.3 Min |      4.3 GByte |
-# | NNCLR         |        256 |    200 |              0.726 |   86.8 Min |      4.2 GByte |
-# | SimCLR        |        256 |    200 |              0.771 |   82.2 Min |      3.9 GByte |
-# | SimSiam       |        256 |    200 |              0.669 |   78.6 Min |      3.9 GByte |
-# | SMoG          |        128 |    200 |              0.698 |  220.9 Min |     14.3 GByte |
-# | SwaV          |        256 |    200 |              0.748 |   77.6 Min |      4.0 GByte |
-# |---------------|------------|--------|--------------------|------------|----------------|
-# | BarlowTwins   |        256 |    800 |              0.789 |  330.9 Min |      4.0 GByte |
-# | BYOL          |        256 |    800 |              0.851 |  332.7 Min |      4.3 GByte |
-# | DCL (*)       |        256 |    800 |              0.816 |  213.1 Min |      4.3 GByte |
-# | DCLW (*)      |        256 |    800 |              0.827 |  213.1 Min |      4.3 GByte |
-# | DINO (Res18)  |        256 |    800 |              0.881 |  613.9 Min |      6.7 GByte |
-# | MSN (ViT-S)   |        256 |    800 |              0.834 |  376.1 Min |     16.3 GByte |
-# | Moco          |        256 |    800 |              0.832 |  322.8 Min |      4.2 GByte |
-# | NNCLR         |        256 |    800 |              0.848 |  341.4 Min |      4.2 GByte |
-# | SimCLR        |        256 |    800 |              0.858 |  324.8 Min |      3.9 GByte |
-# | SimSiam       |        256 |    800 |              0.852 |  316.0 Min |      3.9 GByte |
-# | SwaV          |        256 |    800 |              0.899 |  554.7 Min |      6.6 GByte |
 """
 1 epoch times to get a sense of the speed of the models. Run on an RTX 3080 Ti.
 ---------------------------------------------------------------------
@@ -79,12 +51,19 @@ Still, the results are comparable to the GTX 1080 Ti run.
 
 Re-running benchmarks since knn_k wasn't being used properly.
 The following is on a GTX 1080 Ti.
+---------------------------------------------------------------------------------------------------------------
+| Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
+---------------------------------------------------------------------------------------------------------------
+| SupervisedR18 |         32 |    200 |              0.751 |              0.738 |  266.1 Min |      4.7 GByte |
+| FastSiam(sym) |         32 |    200 |              0.514 |              0.528 |  785.1 Min |      6.9 GByte |
+| FastSiam      |         32 |    200 |              0.467 |              0.455 |  744.4 Min |      6.8 GByte |
+---------------------------------------------------------------------------------------------------------------
 
 The following is on an RTX 3080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
-| DINO          |         32 |    201 |              0.555 |              0.562 |  721.0 Min |      6.5 GByte |
+| DINO          |         32 |    200 |              0.555 |              0.562 |  721.0 Min |      6.5 GByte |
 ---------------------------------------------------------------------------------------------------------------
 """
 
@@ -111,7 +90,7 @@ from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
 from lightly.utils import scheduler
 
-# from pl_bolts.optimizers.lars import LARS  # TODO: once pl_bolts is updated, use this, currently whole package is broken
+# from pl_bolts.optimizers.lars import LARS  # TODO: once pl_bolts is updated, use this; currently whole package is broken
 from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
@@ -136,7 +115,7 @@ num_workers = os.cpu_count()
 memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 200
+max_epochs = 5
 knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
 knn_t = 0.1
 classes = 9
@@ -175,7 +154,7 @@ else:
 
 # %%
 # Create a smaller dataset for benchmarking using one of the training splits
-df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
+df = pd.read_pickle("../data/cleaned_splits/train_1_split.pkl")
 # df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
 # df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
 # df = pd.concat([df_train, df_val], axis=0)
@@ -922,10 +901,23 @@ class MAEModel(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_scheduler = scheduler.CosineWarmupScheduler(
-            optim, self.warmup_epochs, max_epochs
+        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optim, self.scale_lr
         )
-        return [optim], [cosine_scheduler]
+        return [optim], [cosine_with_warmup_scheduler]
+
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
 
 
 class MSNModel(KNNBenchmarkModule):
@@ -1202,7 +1194,7 @@ models = [
     # SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
-    # MAEModel,
+    MAEModel,
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
@@ -1211,7 +1203,7 @@ models = [
     # SimSiamModel,
     # # VICRegModel,
     # SwaVModel,
-    DINOModel,
+    # DINOModel,
     # MSNModel,
     # MSNViTModel,
     # DINOViTModel,
@@ -1279,6 +1271,8 @@ for BenchmarkModel in models:
         }
         runs.append(run)
         print(run)
+
+        print(benchmark_model.confusion_matrix)
 
         # delete model and trainer + free up cuda memory
         del benchmark_model
