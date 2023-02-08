@@ -1,5 +1,6 @@
 import copy
 import io
+import math
 import warnings
 
 import lightly
@@ -41,6 +42,8 @@ gather_distributed = False
 batch_size = 32
 lr_factor = batch_size / 256
 max_epochs = 200
+
+# TODO: remove hard-coded variables
 
 
 class KNNBenchmarkModule(pl.LightningModule):
@@ -854,10 +857,23 @@ class MAE(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_scheduler = scheduler.CosineWarmupScheduler(
-            optim, self.warmup_epochs, max_epochs
+        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optim, self.scale_lr
         )
-        return [optim], [cosine_scheduler]
+        return [optim], [cosine_with_warmup_scheduler]
+
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
 
 
 class MSN(KNNBenchmarkModule):
@@ -930,10 +946,23 @@ class MSN(KNNBenchmarkModule):
             weight_decay=0.05,
             betas=(0.9, 0.95),
         )
-        cosine_scheduler = scheduler.CosineWarmupScheduler(
-            optim, self.warmup_epochs, max_epochs
+        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optim, self.scale_lr
         )
-        return [optim], [cosine_scheduler]
+        return [optim], [cosine_with_warmup_scheduler]
+
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
 
 
 class SwAV(KNNBenchmarkModule):
@@ -1039,14 +1068,17 @@ class DCLW(KNNBenchmarkModule):
 #         return loss
 
 #     def configure_optimizers(self):
-#         # Training diverges without LARS
 #         optim = LARS(
 #             self.parameters(),
 #             lr=0.3 * lr_factor,
 #             weight_decay=1e-4,
 #             momentum=0.9,
 #         )
-#         cosine_scheduler = scheduler.CosineWarmupScheduler(
-#             optim, self.warmup_epochs, max_epochs
-#         )
-#         return [optim], [cosine_scheduler]
+#         scheduler = torch.optim.lr_scheduler.LambdaLR(optim, self.scale_lr)
+#         return [optim], [scheduler]
+
+#     def scale_lr(self, epoch):
+#         if epoch < self.warmup_epochs:
+#             return epoch / self.warmup_epochs
+#         else:
+#             return 0.5 * (1. + math.cos(math.pi * (epoch - self.warmup_epochs) / (max_epochs - self.warmup_epochs)))
