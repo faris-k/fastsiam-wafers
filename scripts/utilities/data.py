@@ -10,6 +10,8 @@ from lightly.transforms.rotation import RandomRotate
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import InterpolationMode
 
+# TODO: Migrate to albumentations instead of torchvision to use OneOf
+# colab: https://colab.research.google.com/github/albumentations-team/albumentations_examples/blob/colab/pytorch_classification.ipynb
 
 # NEW VERSION 🚀
 class DieNoise(object):

@@ -98,7 +98,7 @@ class KNNBenchmarkModule(pl.LightningModule):
         self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
 
         # At every epoch, also keep a historical record of the feature_bank
-        self.feature_bank_history.append(self.feature_bank.t())
+        self.feature_bank_history.append(self.feature_bank.t().detach().cpu().numpy())
 
         self.backbone.train()
 
@@ -150,42 +150,42 @@ class KNNBenchmarkModule(pl.LightningModule):
             )
             self.confusion_matrix.append(computed_confusion_matrix)
 
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(
-                computed_confusion_matrix,
-                annot=True,
-                cmap=sns.cubehelix_palette(start=0, light=0.97, as_cmap=True),
-                square=True,
-                linewidths=1,
-                fmt=".2f",
-                ax=ax,
-            )
-            # Add axis labels
-            ax.set_xlabel("Predicted Label", fontsize=14)
-            ax.set_ylabel("True Label", fontsize=14)
-            # ax.legend(
-            #     ["Predicted", "True"],
-            #     loc="upper right",
-            #     bbox_to_anchor=(1.5, 1.0),
-            #     ncol=1,
+            # fig, ax = plt.subplots(figsize=(8, 6))
+            # sns.heatmap(
+            #     computed_confusion_matrix,
+            #     annot=True,
+            #     cmap=sns.cubehelix_palette(start=0, light=0.97, as_cmap=True),
+            #     square=True,
+            #     linewidths=1,
+            #     fmt=".2f",
+            #     ax=ax,
             # )
-            buf = io.BytesIO()
+            # # Add axis labels
+            # ax.set_xlabel("Predicted Label", fontsize=14)
+            # ax.set_ylabel("True Label", fontsize=14)
+            # # ax.legend(
+            # #     ["Predicted", "True"],
+            # #     loc="upper right",
+            # #     bbox_to_anchor=(1.5, 1.0),
+            # #     ncol=1,
+            # # )
+            # buf = io.BytesIO()
 
-            plt.savefig(buf, format="jpeg", bbox_inches="tight")
-            buf.seek(0)
-            image = Image.open(buf)
-            image = to_tensor(image)
-            self.logger.experiment.add_image(
-                "Confusion Matrix",
-                image,
-                self.current_epoch,
-            )
+            # plt.savefig(buf, format="jpeg", bbox_inches="tight")
+            # buf.seek(0)
+            # image = Image.open(buf)
+            # image = to_tensor(image)
+            # self.logger.experiment.add_image(
+            #     "Confusion Matrix",
+            #     image,
+            #     self.current_epoch,
+            # )
 
-            # close and clear figure and buffer
-            plt.close(fig)
-            plt.clf()
-            buf.close()
-            del fig, ax, buf, image
+            # # close and clear figure and buffer
+            # plt.close(fig)
+            # plt.clf()
+            # buf.close()
+            # del fig, ax, buf, image
 
     def predict_step(self, batch, batch_idx):
         # Recommended usage: preds = trainer.predict(model, dataloader)

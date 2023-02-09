@@ -63,6 +63,7 @@ The following is on an RTX 3080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
+| SimSiam       |         32 |    200 |              0.534 |              0.542 |  251.9 Min |      5.5 GByte |
 | DINO          |         32 |    200 |              0.555 |              0.562 |  721.0 Min |      6.5 GByte |
 ---------------------------------------------------------------------------------------------------------------
 """
@@ -115,7 +116,7 @@ num_workers = os.cpu_count()
 memory_bank_size = 4096
 
 # set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 5
+max_epochs = 200
 knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
 knn_t = 0.1
 classes = 9
@@ -154,7 +155,7 @@ else:
 
 # %%
 # Create a smaller dataset for benchmarking using one of the training splits
-df = pd.read_pickle("../data/cleaned_splits/train_1_split.pkl")
+df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
 # df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
 # df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
 # df = pd.concat([df_train, df_val], axis=0)
@@ -398,6 +399,9 @@ class SimSiamModel(KNNBenchmarkModule):
         z = self.projection_head(f)
         p = self.prediction_head(z)
         z = z.detach()
+        self.log("f std", lightly.utils.debug.std_of_l2_normalized(f))
+        self.log("z std", lightly.utils.debug.std_of_l2_normalized(z))
+        self.log("p std", lightly.utils.debug.std_of_l2_normalized(p))
         return z, p
 
     def training_step(self, batch, batch_idx):
@@ -1223,13 +1227,13 @@ models = [
     # SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
-    MAEModel,
+    # MAEModel,
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
     # BYOLModel,
     # DCLW,
-    # SimSiamModel,
+    SimSiamModel,
     # # VICRegModel,
     # SwaVModel,
     # DINOModel,
@@ -1301,7 +1305,14 @@ for BenchmarkModel in models:
         runs.append(run)
         print(run)
 
-        print(benchmark_model.confusion_matrix)
+        # Save feature bank and confusion matrix to compressed npz file
+        stacked_history = np.stack(benchmark_model.feature_bank_history)
+        stacked_cm = np.stack(benchmark_model.confusion_matrix)
+        np.savez_compressed(
+            os.path.join(logger.log_dir, "history.npz"),
+            feature_bank=stacked_history,
+            confusion_matrix=stacked_cm,
+        )
 
         # delete model and trainer + free up cuda memory
         del benchmark_model
