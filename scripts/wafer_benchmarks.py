@@ -274,6 +274,7 @@ class SupervisedR18(KNNBenchmarkModule):
     def forward(self, x):
         f = self.backbone(x).flatten(start_dim=1)
         p = self.fc(f)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
         return F.log_softmax(p, dim=1)
 
     def training_step(self, batch, batch_idx):
@@ -311,6 +312,7 @@ class MocoModel(KNNBenchmarkModule):
 
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
         return self.projection_head(x)
 
     def training_step(self, batch, batch_idx):
@@ -365,6 +367,7 @@ class SimCLRModel(KNNBenchmarkModule):
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
         z = self.projection_head(x)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
         return z
 
     def training_step(self, batch, batch_index):
@@ -399,9 +402,7 @@ class SimSiamModel(KNNBenchmarkModule):
         z = self.projection_head(f)
         p = self.prediction_head(z)
         z = z.detach()
-        self.log("f std", lightly.utils.debug.std_of_l2_normalized(f))
-        self.log("z std", lightly.utils.debug.std_of_l2_normalized(z))
-        self.log("p std", lightly.utils.debug.std_of_l2_normalized(p))
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
         return z, p
 
     def training_step(self, batch, batch_idx):
@@ -437,6 +438,7 @@ class FastSiamModel(KNNBenchmarkModule):
         z = self.projection_head(f)
         p = self.prediction_head(z)
         z = z.detach()
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
         return z, p
 
     def training_step(self, batch, batch_idx):
@@ -485,6 +487,7 @@ class FastSiamSymmetrizedModel(KNNBenchmarkModule):
         z = self.projection_head(f)
         p = self.prediction_head(z)
         z = z.detach()
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
         return z, p
 
     # Symmetrized loss version
@@ -531,6 +534,7 @@ class BarlowTwinsModel(KNNBenchmarkModule):
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
         z = self.projection_head(x)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
         return z
 
     def training_step(self, batch, batch_index):
@@ -572,6 +576,7 @@ class BYOLModel(KNNBenchmarkModule):
         y = self.backbone(x).flatten(start_dim=1)
         z = self.projection_head(y)
         p = self.prediction_head(z)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
         return p
 
     def forward_momentum(self, x):
@@ -632,6 +637,7 @@ class DINOModel(KNNBenchmarkModule):
     def forward(self, x):
         y = self.backbone(x).flatten(start_dim=1)
         z = self.head(y)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
         return z
 
     def forward_teacher(self, x):
@@ -685,6 +691,7 @@ class DINOConvNeXtModel(KNNBenchmarkModule):
     def forward(self, x):
         y = self.backbone(x).flatten(start_dim=1)
         z = self.head(y)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
         return z
 
     def forward_teacher(self, x):
@@ -745,6 +752,7 @@ class DINOXCiTModel(KNNBenchmarkModule):
     def forward(self, x):
         y = self.backbone(x).flatten(start_dim=1)
         z = self.head(y)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
         return z
 
     def forward_teacher(self, x):
@@ -800,6 +808,7 @@ class DINOViTModel(KNNBenchmarkModule):
     def forward(self, x):
         y = self.backbone(x).flatten(start_dim=1)
         z = self.head(y)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
         return z
 
     def forward_teacher(self, x):
@@ -858,7 +867,9 @@ class MAEModel(KNNBenchmarkModule):
         self.criterion = nn.MSELoss()
 
     def forward_encoder(self, images, idx_keep=None):
-        return self.backbone.encode(images, idx_keep)
+        out = self.backbone.encode(images, idx_keep)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(out.flatten(1)))
+        return out
 
     def forward_decoder(self, x_encoded, idx_keep, idx_mask):
         # build decoder input
@@ -969,6 +980,9 @@ class MSNModel(KNNBenchmarkModule):
 
         loss = self.criterion(anchors_out, targets_out, self.prototypes.data)
         self.log("train_loss_ssl", loss)
+        self.log(
+            "rep_std", lightly.utils.debug.std_of_l2_normalized(targets_out.flatten(1))
+        )
         return loss
 
     def encode_masked(self, anchors):
@@ -1120,6 +1134,7 @@ class SwaVModel(KNNBenchmarkModule):
 
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
         x = self.projection_head(x)
         x = nn.functional.normalize(x, dim=1, p=2)
         return self.prototypes(x)
@@ -1166,6 +1181,7 @@ class DCLW(KNNBenchmarkModule):
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
         z = self.projection_head(x)
+        self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
         return z
 
     def training_step(self, batch, batch_index):
@@ -1230,16 +1246,15 @@ models = [
     # MAEModel,
     # SimCLRModel,
     # MocoModel,
-    # BarlowTwinsModel,
-    # BYOLModel,
-    # DCLW,
+    BarlowTwinsModel,
+    BYOLModel,
+    DCLW,
     SimSiamModel,
     # # VICRegModel,
-    # SwaVModel,
-    # DINOModel,
-    # MSNModel,
-    # MSNViTModel,
-    # DINOViTModel,
+    SwaVModel,
+    DINOModel,
+    MSNModel,
+    DINOViTModel,
     # # DINOConvNeXtModel,
     # # DINOXCiTModel,
 ]
