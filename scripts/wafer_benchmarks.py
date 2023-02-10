@@ -63,8 +63,10 @@ The following is on an RTX 3080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
-| SimSiam       |         32 |    200 |              0.534 |              0.542 |  251.9 Min |      5.5 GByte |
-| DINO          |         32 |    200 |              0.555 |              0.562 |  721.0 Min |      6.5 GByte |
+| FastSiam      |         32 |    200 |              0.538 |              0.561 |  326.3 Min |      3.0 GByte |
+| FastSiam(sym) |         32 |    200 |              0.537 |              0.541 |  395.5 Min |      3.0 GByte |
+| SimSiam       |         32 |    200 |              0.534 |              0.542 |  251.9 Min |      1.7 GByte |
+| DINO          |         32 |    200 |              0.555 |              0.562 |  721.0 Min |      2.8 GByte |
 ---------------------------------------------------------------------------------------------------------------
 """
 
@@ -98,6 +100,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from utilities.benchmarking import KNNBenchmarkModule
 from utilities.data import *
+from utilities.losses import PMSNLoss
 
 torch.set_float32_matmul_precision("high")
 
@@ -218,7 +221,7 @@ def get_data_loaders(batch_size: int, model):
         col_fn = WaferDINOCOllateFunction(
             global_crop_size=200, local_crop_size=200 // 2
         )
-    elif model == MSNModel or model == MSNViTModel:
+    elif model == MSNModel or model == MSNViTModel or model == PMSNModel:
         col_fn = msn_collate_fn
     elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
         col_fn = fastsiam_collate_fn
@@ -1027,6 +1030,98 @@ class MSNModel(KNNBenchmarkModule):
             )
 
 
+class PMSNModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
+
+        self.warmup_epochs = 15
+        #  ViT small configuration (ViT-S/16) = dict(patch_size=16, embed_dim=384, depth=12, num_heads=6)
+        #  ViT tiny configuration (ViT-T/16) = dict(patch_size=16, embed_dim=192, depth=12, num_heads=3)
+        self.mask_ratio = 0.15
+        self.backbone = masked_autoencoder.MAEBackbone(
+            image_size=224,
+            patch_size=16,
+            num_layers=12,
+            num_heads=6,
+            hidden_dim=384,
+            mlp_dim=384 * 4,
+        )
+        self.projection_head = heads.MSNProjectionHead(384)
+
+        self.anchor_backbone = copy.deepcopy(self.backbone)
+        self.anchor_projection_head = copy.deepcopy(self.projection_head)
+
+        utils.deactivate_requires_grad(self.backbone)
+        utils.deactivate_requires_grad(self.projection_head)
+
+        self.prototypes = nn.Linear(256, 1024, bias=False).weight
+        self.criterion = PMSNLoss()
+
+    def training_step(self, batch, batch_idx):
+        utils.update_momentum(self.anchor_backbone, self.backbone, 0.996)
+        utils.update_momentum(self.anchor_projection_head, self.projection_head, 0.996)
+
+        views, _, _ = batch
+        views = [view.to(self.device, non_blocking=True) for view in views]
+        targets = views[0]
+        anchors = views[1]
+        anchors_focal = torch.concat(views[2:], dim=0)
+
+        targets_out = self.backbone(targets)
+        targets_out = self.projection_head(targets_out)
+        anchors_out = self.encode_masked(anchors)
+        anchors_focal_out = self.encode_masked(anchors_focal)
+        anchors_out = torch.cat([anchors_out, anchors_focal_out], dim=0)
+
+        loss = self.criterion(anchors_out, targets_out, self.prototypes.data)
+        self.log("train_loss_ssl", loss)
+        self.log(
+            "rep_std", lightly.utils.debug.std_of_l2_normalized(targets_out.flatten(1))
+        )
+        return loss
+
+    def encode_masked(self, anchors):
+        batch_size, _, _, width = anchors.shape
+        seq_length = (width // self.anchor_backbone.patch_size) ** 2
+        idx_keep, _ = utils.random_token_mask(
+            size=(batch_size, seq_length),
+            mask_ratio=self.mask_ratio,
+            device=self.device,
+        )
+        out = self.anchor_backbone(anchors, idx_keep)
+        return self.anchor_projection_head(out)
+
+    def configure_optimizers(self):
+        params = [
+            *list(self.anchor_backbone.parameters()),
+            *list(self.anchor_projection_head.parameters()),
+            self.prototypes,
+        ]
+        optim = torch.optim.AdamW(
+            params=params,
+            lr=1.5e-4 * lr_factor,
+            weight_decay=0.05,
+            betas=(0.9, 0.95),
+        )
+        cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optim, self.scale_lr
+        )
+        return [optim], [cosine_with_warmup_scheduler]
+
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
+
+
 class MSNViTModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -1240,21 +1335,22 @@ class DCLW(KNNBenchmarkModule):
 
 
 models = [
-    # SupervisedR18,
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
+    # SupervisedR18,
     # MAEModel,
     # SimCLRModel,
     # MocoModel,
-    BarlowTwinsModel,
-    BYOLModel,
-    DCLW,
-    SimSiamModel,
-    # # VICRegModel,
-    SwaVModel,
-    DINOModel,
-    MSNModel,
-    DINOViTModel,
+    # BarlowTwinsModel,
+    # BYOLModel,
+    # DCLW,
+    # SimSiamModel,
+    # # # VICRegModel,
+    # SwaVModel,
+    # DINOModel,
+    # MSNModel,
+    PMSNModel,
+    # DINOViTModel,
     # # DINOConvNeXtModel,
     # # DINOXCiTModel,
 ]
