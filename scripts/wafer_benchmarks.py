@@ -54,18 +54,25 @@ The following is on a GTX 1080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
-| SupervisedR18 |         32 |    200 |              0.751 |              0.738 |  266.1 Min |      4.7 GByte |
-| FastSiam(sym) |         32 |    200 |              0.514 |              0.528 |  785.1 Min |      6.9 GByte |
-| FastSiam      |         32 |    200 |              0.467 |              0.455 |  744.4 Min |      6.8 GByte |
+| SupervisedR18 |         32 |    200 |              0.751 |              0.738 |  266.1 Min |      0.9 GByte |
+| MAE           |         32 |    200 |              0.669 |              0.697 |  423.4 Min |      1.9 GByte |
+| SimCLR        |         32 |    200 |              0.628 |              0.635 |  392.0 Min |      1.6 GByte |
+| Moco          |         32 |    200 |              0.604 |              0.614 |  513.1 Min |      1.8 GByte |
+| FastSiam(sym) |         32 |    200 |              0.514 |              0.528 |  785.1 Min |      3.0 GByte |
+| FastSiam      |         32 |    200 |              0.467 |              0.455 |  744.4 Min |      3.0 GByte |
 ---------------------------------------------------------------------------------------------------------------
 
 The following is on an RTX 3080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
+| SupervisedR18 |         32 |    200 |              0.750 |              0.736 |  171.6 Min |      0.9 GByte |
+| MAE           |         32 |    200 |              0.677 |              0.699 |  270.8 Min |      1.9 GByte |
+| SimCLR        |         32 |    200 |              0.627 |              0.647 |  243.7 Min |      1.5 GByte |
+| Moco          |         32 |    200 |              0.680 |              0.690 |  272.5 Min |      1.8 GByte |
+| SimSiam       |         32 |    200 |              0.534 |              0.542 |  251.9 Min |      1.7 GByte |
 | FastSiam      |         32 |    200 |              0.538 |              0.561 |  326.3 Min |      3.0 GByte |
 | FastSiam(sym) |         32 |    200 |              0.537 |              0.541 |  395.5 Min |      3.0 GByte |
-| SimSiam       |         32 |    200 |              0.534 |              0.542 |  251.9 Min |      1.7 GByte |
 | DINO          |         32 |    200 |              0.555 |              0.562 |  721.0 Min |      2.8 GByte |
 ---------------------------------------------------------------------------------------------------------------
 """
@@ -1340,16 +1347,16 @@ models = [
     # SupervisedR18,
     # MAEModel,
     # SimCLRModel,
-    # MocoModel,
+    MocoModel,
     # BarlowTwinsModel,
-    # BYOLModel,
+    BYOLModel,
     # DCLW,
     # SimSiamModel,
     # # # VICRegModel,
     # SwaVModel,
     # DINOModel,
     # MSNModel,
-    PMSNModel,
+    # PMSNModel,
     # DINOViTModel,
     # # DINOConvNeXtModel,
     # # DINOXCiTModel,

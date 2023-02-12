@@ -1,10 +1,45 @@
 import math
 
 import torch
-import torch.distributed as dist
+
+# import torch.distributed as dist
+import torch.distributions as D
 import torch.nn as nn
 import torch.nn.functional as F
 from lightly.loss.msn_loss import prototype_probabilities, sharpen, sinkhorn
+
+
+class PowerLaw(D.Distribution):
+    def __init__(self, mean_anchor_probs, tau):
+        self.mean_anchor_probs = mean_anchor_probs
+        self.tau = tau
+
+    def log_prob(self, value):
+        return (1 - self.tau) * torch.log(value)
+
+    def entropy(self):
+        return None  # Not implemented
+
+
+# def kl_divergence_power_law(mean_anchor_probs, tau):
+#     # Ensure that the mean_anchor_probs tensor has values in the range [0, 1]
+#     mean_anchor_probs = torch.clamp(mean_anchor_probs, 1e-7, 1 - 1e-7)
+
+#     # Compute the log of the power-law distribution
+#     log_power_law = (1 - tau) * torch.log(mean_anchor_probs)
+
+#     # Compute the KL-divergence between the two distributions
+#     kl_div = (mean_anchor_probs * (torch.log(mean_anchor_probs) - log_power_law)).sum(
+#         dim=-1
+#     )
+
+#     return kl_div
+
+
+def kl_divergence_power_law(mean_anchor_probs, tau):
+    mean_anchor_probs = torch.clamp(mean_anchor_probs, 1e-7, 1 - 1e-7)
+    power_law = PowerLaw(mean_anchor_probs, tau)
+    return D.kl_divergence(mean_anchor_probs, power_law)
 
 
 class PMSNLoss(nn.Module):
@@ -103,17 +138,40 @@ class PMSNLoss(nn.Module):
         # cross entropy loss
         loss = torch.mean(torch.sum(torch.log(anchor_probs ** (-target_probs)), dim=1))
 
-        # PMSN loss replaces mean entropy maximization regularization with
-        # KL divergence to a power law distribution parameterized by tau
+        # # PMSN loss replaces mean entropy maximization regularization with
+        # # KL divergence to a power law distribution parameterized by tau
+        # if self.pmsn_weight > 0:
+        #     mean_anchor_probs = torch.mean(anchor_probs, dim=0)
+        #     target_dist = (torch.arange(len(mean_anchor_probs)) + 1) ** (-self.tau)
+        #     target_dist = target_dist / torch.sum(target_dist)
+        #     target_dist = target_dist.to(mean_anchor_probs.device)
+        #     pmsn_loss = F.kl_div(
+        #         torch.log(mean_anchor_probs),
+        #         torch.log(target_dist),
+        #         # reduction="batchmean",
+        #     )
+        #     # loss -= self.pmsn_weight * pmsn_loss
+
+        # if self.pmsn_weight > 0:
+        #     mean_anchor_probs = torch.mean(anchor_probs, dim=0)
+        #     mean_anchor_probs = torch.clamp(mean_anchor_probs, 1e-7, 1 - 1e-7)
+
+        #     power_law_probs = mean_anchor_probs ** (-self.tau)
+        #     power_law_probs = power_law_probs / power_law_probs.sum()
+        #     power_law_probs = torch.clamp(power_law_probs, 1e-7, 1 - 1e-7)
+
+        #     pmsn_loss = F.kl_div(
+        #         torch.log(mean_anchor_probs),
+        #         torch.log(power_law_probs),
+        #         reduction="batchmean",
+        #     )
+        #     loss += self.pmsn_weight * pmsn_loss
+
         if self.pmsn_weight > 0:
             mean_anchor_probs = torch.mean(anchor_probs, dim=0)
-            target_dist = (torch.arange(len(mean_anchor_probs)) + 1) ** (-self.tau)
-            target_dist = target_dist / torch.sum(target_dist)
-            pmsn_loss = F.kl_div(
-                torch.log(mean_anchor_probs),
-                torch.log(target_dist),
-                reduction="batchmean",
-            )
-            loss += self.pmsn_weight * pmsn_loss
+            kl_div = kl_divergence_power_law(mean_anchor_probs, self.tau)
+            print("loss", loss)
+            print("kl_div", kl_div)
+            loss += self.pmsn_weight * kl_div
 
         return loss
