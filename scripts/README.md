@@ -8,17 +8,19 @@
 ## KNN Benchmarking results
 Run on a single GTX 1080 Ti GPU. All models used a ResNet-18 backbone unless specified otherwise. See [`wafer_benchmarks.py`](wafer_benchmarks.py) for full implementation details, and [`utilities/data.py`](utilities/data.py) for the collate functions used for each model (the collate functions determine the augmentation pipelines for self-supervised learning).
 
-| Model           | Batch Size | Epochs | KNN Test Accuracy | KNN Test F1 |       Time | Peak GPU Usage |
-|-----------------|-----------:|-------:|------------------:|------------:|-----------:|---------------:|
-| BarlowTwins     |         32 |    200 |             0.461 |       0.417 |  547.4 Min |      1.9 GByte |
-| BYOL            |         32 |    200 |             0.474 |       0.478 |  442.5 Min |      1.8 GByte |
-| DCLW            |         32 |    200 |             0.523 |       0.529 |  372.2 Min |      1.6 GByte |
-| MoCo            |         32 |    200 |             0.502 |       0.500 |  438.0 Min |      1.8 GByte |
-| SimCLR          |         32 |    200 |             0.537 |       0.561 |  365.0 Min |      1.6 GByte |
-| SimSiam         |         32 |    200 |             0.380 |       0.392 |  373.9 Min |      1.7 GByte |
-| FastSiam        |         32 |    200 |             0.384 |       0.357 |  467.8 Min |      3.0 GByte |
-| SwaV            |         32 |    200 |             0.519 |       0.525 | 1092.5 Min |      2.7 GByte |
-| DINO            |         32 |    200 |             0.358 |       0.337 | 1030.0 Min |      2.8 GByte |
-| DINO (ViT-S/16) |         32 |    200 |             0.329 |       0.300 | 1911.3 Min |      7.6 GByte |
-| MSN (ViT-S/16)  |         32 |    200 |             0.484 |       0.483 | 1512.7 Min |      6.4 GByte |
-| MAE (ViT-B/32)  |         32 |    200 |             0.506 |       0.514 |  412.3 Min |      1.9 GByte |
+| Model           | Batch Size | Epochs | #param. | KNN Test Accuracy | KNN Test F1 |    Time    | Peak GPU Usage |
+|-----------------|:----------:|:------:|:-------:|:-----------------:|:-----------:|:----------:|:--------------:|
+| SupervisedR18   |     32     |   200  |  11.2M  |       0.751       |    0.738    |  266.1 Min |    0.9 GByte   |
+| BarlowTwins     |     32     |   200  |  20.6M  |       0.584       |    0.611    |  554.8 Min |    1.8 GByte   |
+| BYOL            |     32     |   200  |  16.4M  |       0.611       |    0.636    |  446.4 Min |    1.8 GByte   |
+| DCLW            |     32     |   200  |  11.5M  |       0.637       |    0.637    |  374.5 Min |    1.6 GByte   |
+| Moco            |     32     |   200  |  12.5M  |       0.604       |    0.614    |  513.1 Min |    1.8 GByte   |
+| SimCLR          |     32     |   200  |  11.5M  |       0.628       |    0.635    |  392.0 Min |    1.6 GByte   |
+| SimSiam         |     32     |   200  |  22.7M  |       0.461       |    0.472    |  374.0 Min |    1.7 GByte   |
+| FastSiam        |     32     |   200  |  22.7M  |       0.467       |    0.455    |  744.4 Min |    3.0 GByte   |
+| FastSiam(sym)   |     32     |   200  |  22.7M  |       0.514       |    0.528    |  785.1 Min |    3.0 GByte   |
+| SwaV            |     32     |   200  |  12.6M  |       0.597       |    0.619    | 1092.6 Min |    2.7 GByte   |
+| DINO            |     32     |   200  |  17.5M  |       0.531       |    0.557    | 1041.0 Min |    2.8 GByte   |
+| DINO (ViT-S/16) |     32     |   200  |  27.7M  |       0.562       |    0.566    | 1919.2 Min |    7.6 GByte   |
+| MSN (ViT-S/16)  |     32     |   200  |  27.8M  |       0.609       |    0.621    | 1519.7 Min |    6.4 GByte   |
+| MAE (ViT-B/32)  |     32     |   200  |  93.4M  |       0.669       |    0.697    |  423.4 Min |    1.9 GByte   |

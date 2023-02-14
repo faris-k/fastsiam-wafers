@@ -56,10 +56,18 @@ The following is on a GTX 1080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | SupervisedR18 |         32 |    200 |              0.751 |              0.738 |  266.1 Min |      0.9 GByte |
 | MAE           |         32 |    200 |              0.669 |              0.697 |  423.4 Min |      1.9 GByte |
+| BarlowTwins   |         32 |    200 |              0.584 |              0.611 |  554.8 Min |      1.8 GByte |
+| BYOL          |         32 |    200 |              0.611 |              0.636 |  446.4 Min |      1.8 GByte |
+| DCLW          |         32 |    200 |              0.637 |              0.637 |  374.5 Min |      1.6 GByte |
 | SimCLR        |         32 |    200 |              0.628 |              0.635 |  392.0 Min |      1.6 GByte |
 | Moco          |         32 |    200 |              0.604 |              0.614 |  513.1 Min |      1.8 GByte |
-| FastSiam(sym) |         32 |    200 |              0.514 |              0.528 |  785.1 Min |      3.0 GByte |
+| SimSiam       |         32 |    200 |              0.461 |              0.472 |  374.0 Min |      1.7 GByte |
 | FastSiam      |         32 |    200 |              0.467 |              0.455 |  744.4 Min |      3.0 GByte |
+| FastSiam(sym) |         32 |    200 |              0.514 |              0.528 |  785.1 Min |      3.0 GByte |
+| SwaV          |         32 |    200 |              0.597 |              0.619 | 1092.6 Min |      2.7 GByte |
+| DINO          |         32 |    200 |              0.531 |              0.557 | 1041.0 Min |      2.8 GByte |
+| MSN           |         32 |    200 |              0.609 |              0.621 | 1519.7 Min |      6.4 GByte |
+| DINOViT       |         32 |    200 |              0.562 |              0.566 | 1919.2 Min |      7.6 GByte |
 ---------------------------------------------------------------------------------------------------------------
 
 The following is on an RTX 3080 Ti.
@@ -1347,7 +1355,7 @@ models = [
     # SupervisedR18,
     # MAEModel,
     # SimCLRModel,
-    MocoModel,
+    # MocoModel,
     # BarlowTwinsModel,
     BYOLModel,
     # DCLW,
