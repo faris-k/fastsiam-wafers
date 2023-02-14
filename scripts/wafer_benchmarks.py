@@ -22,35 +22,6 @@
 ---------------------------------------------------------------------
 
 Full benchmark for 200 epochs. Run on a GTX 1080 Ti.
-
----------------------------------------------------------------------------------------------------------
-| Model         | Batch Size | Epochs |  KNN Test Accuracy |  KNN Test F1 |       Time | Peak GPU Usage |
----------------------------------------------------------------------------------------------------------
-| MAE           |         32 |    200 |              0.506 |        0.514 |  412.3 Min |      1.9 GByte |
-| BarlowTwins   |         32 |    200 |              0.461 |        0.417 |  547.4 Min |      1.9 GByte |
-| BYOL          |         32 |    200 |              0.474 |        0.478 |  442.5 Min |      1.8 GByte |
-| DCLW          |         32 |    200 |              0.523 |        0.529 |  372.2 Min |      1.6 GByte |
-| SimCLR        |         32 |    200 |              0.537 |        0.561 |  365.0 Min |      1.6 GByte |
-| Moco          |         32 |    200 |              0.502 |        0.500 |  438.0 Min |      1.8 GByte |
-| SimSiam       |         32 |    200 |              0.380 |        0.392 |  373.9 Min |      1.7 GByte |
-| FastSiam      |         32 |    200 |              0.384 |        0.357 |  467.8 Min |      3.0 GByte |
-| SwaV          |         32 |    200 |              0.519 |        0.525 | 1092.5 Min |      2.7 GByte |
-| DINO          |         32 |    200 |              0.358 |        0.337 | 1030.0 Min |      2.8 GByte |
-| MSN           |         32 |    200 |              0.484 |        0.483 | 1512.7 Min |      6.4 GByte |
-| DINOViT       |         32 |    200 |              0.329 |        0.300 | 1911.3 Min |      7.6 GByte |
----------------------------------------------------------------------------------------------------------
-
-To ensure that hardware does not influence the results, we also ran the MSN benchmark on an RTX 3080 Ti.
-For this run, matmul precision was set from "highest" to "high" since we were using a card with tensor cores.
-Still, the results are comparable to the GTX 1080 Ti run.
----------------------------------------------------------------------------------------------------------
-| Model         | Batch Size | Epochs |  KNN Test Accuracy |  KNN Test F1 |       Time | Peak GPU Usage |
----------------------------------------------------------------------------------------------------------
-| MSN           |         32 |    200 |              0.482 |        0.470 |  785.3 Min |      6.4 GByte |
----------------------------------------------------------------------------------------------------------
-
-Re-running benchmarks since knn_k wasn't being used properly.
-The following is on a GTX 1080 Ti.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
