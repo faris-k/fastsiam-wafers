@@ -1379,6 +1379,7 @@ for BenchmarkModel in models:
             logger=logger,
             callbacks=[checkpoint_callback, RichProgressBar()],
             enable_progress_bar=True,
+            devices=gpus,
         )
         start = time.time()
         trainer.fit(
@@ -1387,12 +1388,11 @@ for BenchmarkModel in models:
             val_dataloaders=dataloader_test,
         )
         end = time.time()
-        # trainer.validate(benchmark_model, dataloader_test)
-        # get the number of epochs the trainer actually ran
         run = {
             "model": model_name,
             "batch_size": batch_size,
             "epochs": trainer.current_epoch,
+            "params": f"{sum(p.numel() for p in benchmark_model.parameters() if p.requires_grad) / 1_000_000:.1f}M",
             "max_accuracy": benchmark_model.max_accuracy,
             "max_f1": benchmark_model.max_f1,
             "runtime": end - start,
@@ -1406,8 +1406,11 @@ for BenchmarkModel in models:
         stacked_history = np.stack(benchmark_model.feature_bank_history)
         stacked_cm = np.stack(benchmark_model.confusion_matrix)
         np.savez_compressed(
-            os.path.join(logger.log_dir, "history.npz"),
+            os.path.join(logger.log_dir, "feature_bank.npz"),
             feature_bank=stacked_history,
+        )
+        np.savez_compressed(
+            os.path.join(logger.log_dir, "confusion_matrix.npz"),
             confusion_matrix=stacked_cm,
         )
 
@@ -1421,8 +1424,8 @@ for BenchmarkModel in models:
 
 #  print results table
 header = (
-    f"| {'Model':<13} | {'Batch Size':>10} | {'Epochs':>6} "
-    f"| {'KNN Test Accuracy':>18} | {'KNN Test F1':>18} | {'Time':>10} | {'Peak GPU Usage':>14} |"
+    f"| {'Model':<13} | {'Batch Size':>10} | {'Epochs':>6} | {'#param.':>8} "
+    f"| {'KNN Test Accuracy':>18} | {'KNN Test F1':>16} | {'Time':>10} | {'Peak GPU Usage':>14} |"
 )
 print("-" * len(header))
 print(header)
@@ -1437,6 +1440,7 @@ for model, results in bench_results.items():
     gpu_memory_usage = gpu_memory_usage.max() / (1024**3)  #  convert to gbyte
     epochs = np.array([result["epochs"] for result in results])
     epochs = int(epochs.mean())
+    params = results[0]["params"]
 
     if len(accuracy) > 1:
         accuracy_msg = f"{accuracy.mean():>8.3f} +- {accuracy.std():>4.3f}"
@@ -1445,10 +1449,10 @@ for model, results in bench_results.items():
     if len(f1) > 1:
         f1_msg = f"{f1.mean():>8.3f} +- {f1.std():>4.3f}"
     else:
-        f1_msg = f"{f1.mean():>18.3f}"
+        f1_msg = f"{f1.mean():>16.3f}"
 
     print(
-        f"| {model:<13} | {batch_size:>10} | {epochs:>6} "
+        f"| {model:<13} | {batch_size:>10} | {epochs:>6} | {params:>8} "
         f"| {accuracy_msg} | {f1_msg} | {runtime:>6.1f} Min "
         f"| {gpu_memory_usage:>8.1f} GByte |",
         flush=True,
