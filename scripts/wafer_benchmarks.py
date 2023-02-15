@@ -83,6 +83,7 @@ from lightly.utils import scheduler
 from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
+from timm.optim.lars import Lars
 from torch.utils.data import DataLoader
 from utilities.benchmarking import KNNBenchmarkModule
 from utilities.data import *
@@ -148,7 +149,6 @@ df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
 # df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
 # df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
 # df = pd.concat([df_train, df_val], axis=0)
-# print(df.shape)
 X_train, X_val, y_train, y_val = train_test_split(
     df.waferMap, df.failureCode, test_size=0.2, random_state=42
 )
@@ -1281,43 +1281,53 @@ class DCLW(KNNBenchmarkModule):
         return [optim], [scheduler]
 
 
-# class VICRegModel(KNNBenchmarkModule):
-#     def __init__(self, dataloader_kNN, num_classes, **kwargs):
-#         super().__init__(dataloader_kNN, num_classes, **kwargs)
-#         # create a ResNet backbone and remove the classification head
-#         self.backbone = timm.create_model("resnet18", num_classes=0)
-#         feature_dim = self.backbone.num_features
-#         self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
-#         self.criterion = lightly.loss.VICRegLoss()
-#         self.warmup_epochs = 40 if max_epochs >= 800 else 20
+class VICRegModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN, num_classes, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
+        # create a ResNet backbone and remove the classification head
+        self.backbone = timm.create_model("resnet18", num_classes=0)
+        feature_dim = self.backbone.num_features
+        self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
+        self.criterion = lightly.loss.VICRegLoss()
+        self.warmup_epochs = 40 if max_epochs >= 800 else 20
 
-#     def forward(self, x):
-#         x = self.backbone(x).flatten(start_dim=1)
-#         z = self.projection_head(x)
-#         return z
+    def forward(self, x):
+        x = self.backbone(x).flatten(start_dim=1)
+        z = self.projection_head(x)
+        return z
 
-#     def training_step(self, batch, batch_index):
-#         (x0, x1), _, _ = batch
-#         z0 = self.forward(x0)
-#         z1 = self.forward(x1)
-#         loss = self.criterion(z0, z1)
-#         return loss
+    def training_step(self, batch, batch_index):
+        (x0, x1), _, _ = batch
+        z0 = self.forward(x0)
+        z1 = self.forward(x1)
+        loss = self.criterion(z0, z1)
+        return loss
 
-#     def configure_optimizers(self):
-#         optim = LARS(
-#             self.parameters(),
-#             lr=0.3 * lr_factor,
-#             weight_decay=1e-4,
-#             momentum=0.9,
-#         )
-#         scheduler = torch.optim.lr_scheduler.LambdaLR(optim, self.scale_lr)
-#         return [optim], [scheduler]
+    def configure_optimizers(self):
+        # optim = LARS(
+        #     self.parameters(),
+        #     lr=0.3 * lr_factor,
+        #     weight_decay=1e-4,
+        #     momentum=0.9,
+        # )
+        optim = Lars(
+            self.parameters(), lr=0.3 * lr_factor, weight_decay=1e-4, momentum=0.9
+        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optim, self.scale_lr)
+        return [optim], [scheduler]
 
-#     def scale_lr(self, epoch):
-#         if epoch < self.warmup_epochs:
-#             return epoch / self.warmup_epochs
-#         else:
-#             return 0.5 * (1. + math.cos(math.pi * (epoch - self.warmup_epochs) / (max_epochs - self.warmup_epochs)))
+    def scale_lr(self, epoch):
+        if epoch < self.warmup_epochs:
+            return epoch / self.warmup_epochs
+        else:
+            return 0.5 * (
+                1.0
+                + math.cos(
+                    math.pi
+                    * (epoch - self.warmup_epochs)
+                    / (max_epochs - self.warmup_epochs)
+                )
+            )
 
 
 models = [
@@ -1328,10 +1338,10 @@ models = [
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
-    BYOLModel,
+    # BYOLModel,
     # DCLW,
     # SimSiamModel,
-    # # # VICRegModel,
+    VICRegModel,
     # SwaVModel,
     # DINOModel,
     # MSNModel,

@@ -1,6 +1,7 @@
 data/datasets
 # data/cleaned_splits
 data/embeddings
+data/raw
 scripts/benchmark_logs
 scripts/lightning_logs
 imagenette.ipynb

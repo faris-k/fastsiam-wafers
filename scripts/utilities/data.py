@@ -634,3 +634,49 @@ def dpw_transform(wafermap, scale: float = 0.75, plot: bool = False):
         plt.show()
 
     return new_wafer
+
+
+# Helper functions for DPW transforms
+
+# Use this to come up with scale param for DPW transform
+# domain_lower and domain_upper should be bounds of shapeMaxDim in the dataset, 26 to 212
+# out_lower and out_upper should be bounds of scale param, probably 0.4 to 0.9?
+# Use a high p value to get a more skewed distribution
+def power_law_transform(
+    x, domain_lower, domain_upper, out_lower=0.4, out_upper=0.9, p=5
+):
+    # Handle edge cases
+    if x <= domain_lower:
+        return out_upper
+    if x >= domain_upper:
+        return out_lower
+
+    # Invert input domain
+    domain_range = domain_upper - domain_lower
+    inverted_x = abs(x - domain_lower)
+    normalized_x = inverted_x / domain_range
+    # Apply power law transformation
+    y = (1 - normalized_x) ** p
+    # Map result to output range
+    out_range = out_upper - out_lower
+    return out_lower + y * out_range
+
+
+# Verify behavior by visualizing as follows:
+# samples = [power_law_transform(x, domain_lower=20, domain_upper=200, out_lower=0.4, out_upper=0.9, p=0.5) for x in range(20, 201)]
+# plt.plot(range(20, 201), samples)
+
+
+# Once you have a scale param, use this to generate a random scale param
+# Upper bounded by 0.9, lower bound will be what you get from power_law_transform
+# Do this so that the scale param won't be the same for a given image every time
+def generate_skewed_random(lower_bound, upper_bound=0.9, alpha=0.5, beta=3):
+    # Generate random number using beta distribution
+    x = np.random.beta(alpha, beta)
+    # Scale to range [lower_bound, upper_bound]
+    return lower_bound + (upper_bound - lower_bound) * x
+
+
+# Verify behavior by visualizing as follows:
+# samples = [generate_skewed_random(.4, 1, 0.5, 3) for _ in range(10000)]
+# sns.displot(samples)
