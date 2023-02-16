@@ -20,7 +20,10 @@ Run on a single GTX 1080 Ti GPU. All models used a ResNet-18 backbone unless spe
 | FastSiam        |     32     |   200  |  22.7M  |       0.467       |    0.455    |  744.4 Min |    3.0 GByte   |
 | FastSiam(sym)   |     32     |   200  |  22.7M  |       0.514       |    0.528    |  785.1 Min |    3.0 GByte   |
 | SwaV            |     32     |   200  |  12.6M  |       0.597       |    0.619    | 1092.6 Min |    2.7 GByte   |
+| VICReg*         |     32     |   200  |  20.6M  |       0.590       |    0.608    |  258.0 Min*|    1.7 GByte   |
 | DINO            |     32     |   200  |  17.5M  |       0.531       |    0.557    | 1041.0 Min |    2.8 GByte   |
 | DINO (ViT-S/16) |     32     |   200  |  27.7M  |       0.562       |    0.566    | 1919.2 Min |    7.6 GByte   |
 | MSN (ViT-S/16)  |     32     |   200  |  27.8M  |       0.609       |    0.621    | 1519.7 Min |    6.4 GByte   |
 | MAE (ViT-B/32)  |     32     |   200  |  93.4M  |       0.669       |    0.697    |  423.4 Min |    1.9 GByte   |
+
+*VICReg was run on a 3080 Ti GPU, hence the much shorter training time. It trains about as fast as SimSiam, so it would probably take around 380 minutes to train on a 1080 Ti.
