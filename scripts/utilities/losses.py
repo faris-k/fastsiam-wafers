@@ -60,7 +60,7 @@ class PMSNLoss(nn.Module):
         prototypes: torch.Tensor,
         target_sharpen_temperature: float = 0.25,
     ) -> torch.Tensor:
-        """Computes the MSN loss for a set of anchors, targets and prototypes.
+        """Computes the PMSN loss for a set of anchors, targets and prototypes.
 
         Args:
             anchors:
