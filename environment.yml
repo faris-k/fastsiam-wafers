@@ -1,23 +1,33 @@
 name: timm-dev
 channels:
-  - defaults
+    - defaults
+    - conda-forge
+    - pytorch
+    - nvidia
 dependencies:
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=11.7
-  - ipywidgets
-  - ipykernel
-  - ca-certificates
-  - certifi
-  - openssl
-  - umap-learn
-  - scikit-learn
-  - pandas
-  - black
-  - pandarallel
-  - tqdm
-  - seaborn
-  - tensorboard
-  - opencv
+    - pytorch
+    - torchvision
+    - torchaudio
+    - pytorch-cuda=11.7
+    - ipywidgets
+    - ipykernel
+    - ca-certificates
+    - certifi
+    - openssl
+    - umap-learn
+    - scikit-learn
+    - pandas
+    - black
+    - tqdm
+    - seaborn
+    - tensorboard
+    - opencv
+    - pipreqs
+    - pip
+    - albumentations
+    - lightning-bolts
+    - plotly=5.13.0
+    - python-kaleido
+    - pip:
+          - -r requirements.txt
 prefix: C:\Users\khanm\anaconda3\envs\timm-dev
