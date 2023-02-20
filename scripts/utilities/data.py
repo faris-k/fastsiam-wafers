@@ -1,3 +1,4 @@
+import random
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from torchvision.transforms.functional import InterpolationMode
 # colab: https://colab.research.google.com/github/albumentations-team/albumentations_examples/blob/colab/pytorch_classification.ipynb
 
 # NEW VERSION 🚀
-class DieNoise(object):
+class DieNoise:
     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
 
     Parameters
@@ -680,3 +681,53 @@ def generate_skewed_random(lower_bound, upper_bound=0.9, alpha=0.5, beta=3):
 # Verify behavior by visualizing as follows:
 # samples = [generate_skewed_random(.4, 1, 0.5, 3) for _ in range(10000)]
 # sns.displot(samples)
+
+# Inspired by Albumentations OneOf
+# https://albumentations.ai/docs/api_reference/core/composition/#albumentations.core.composition.OneOf
+# https://github.com/albumentations-team/albumentations/blob/master/albumentations/core/composition.py#L302
+class RandomOneOf:
+    def __init__(
+        self,
+        transforms: List[torch.nn.Module],
+        weights: List[float] = None,
+        p: float = 1.0,
+    ):
+        """Randomly applies one of the given transforms with a given probability.
+
+        Parameters
+        ----------
+        transforms : List[torch.nn.Module]
+            List of transforms to apply.
+        weights : List[float], optional
+            List of weights for each transform. If None, all transforms are
+            equally likely to be applied. By default None.
+        p : float, optional
+            Probability of applying the RandomOneOf block at all, by default 1.0.
+        """
+
+        if weights:
+            if len(transforms) != len(weights):
+                raise ValueError(
+                    "The number of weights must match the number of transforms"
+                )
+            if not all([w >= 0 for w in weights]):
+                raise ValueError("Weights must be non-negative")
+            total_weight = sum(weights)
+            if total_weight == 0:
+                raise ValueError("At least one weight must be greater than 0")
+            self.weights = [w / total_weight for w in weights]
+        else:
+            self.weights = [1.0 / len(transforms)] * len(transforms)
+
+        if p is not None and (p < 0 or p > 1):
+            raise ValueError("p must be a float between 0 and 1")
+
+        self.transforms = transforms
+        self.p = p
+
+    def __call__(self, img):
+        if random.random() < self.p:
+            idx = random.choices(range(len(self.transforms)), weights=self.weights)[0]
+            img = self.transforms[idx](img)
+
+        return img
