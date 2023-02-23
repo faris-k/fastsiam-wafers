@@ -1,3 +1,4 @@
+import os
 import random
 from typing import List, Tuple
 
@@ -39,7 +40,8 @@ class DieNoise:
         return sample
 
 
-normalization_stats = torch.load("normalization_stats.pth")
+norm_dir = os.path.join(os.getcwd(), "utilities", "normalization_stats.pth")
+normalization_stats = torch.load(norm_dir)
 
 
 def get_base_transforms(
@@ -563,7 +565,7 @@ class WaferMapDataset(Dataset):
         return len(self.X_list)
 
 
-def get_inference_transforms(img_size: List[int] = [224, 224]):
+def get_inference_transforms(img_size: List[int] = [224, 224], normalize: bool = True):
     """Image transforms for inference.
     Simply converts to PIL Image, resizes, and converts to tensor.
 
@@ -572,15 +574,18 @@ def get_inference_transforms(img_size: List[int] = [224, 224]):
     img_size : List[int], optional
         Size of image, by default [224, 224]
     """
-    return T.Compose(
-        [
-            # Convert to PIL Image, then perform all torchvision transforms
-            T.ToPILImage(),
-            T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
-            T.Grayscale(num_output_channels=3),
-            T.ToTensor(),
-        ]
-    )
+    transforms = [
+        # Convert to PIL Image, then perform all torchvision transforms
+        T.ToPILImage(),
+        T.Resize(img_size, interpolation=InterpolationMode.NEAREST),
+        T.Grayscale(num_output_channels=3),
+        T.ToTensor(),
+    ]
+
+    if normalize:
+        transforms.append(T.Normalize(*normalization_stats))
+
+    return T.Compose(transforms)
 
 
 # TODO: scale should be affected by the size of the wafermap
