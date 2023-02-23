@@ -39,6 +39,9 @@ class DieNoise:
         return sample
 
 
+normalization_stats = torch.load("normalization_stats.pth")
+
+
 def get_base_transforms(
     img_size: List[int] = [200, 200],
     die_noise_prob: float = 0.03,
@@ -47,6 +50,7 @@ def get_base_transforms(
     vf_prob: float = 0.5,
     rr_prob2: float = 0.25,
     to_tensor: bool = True,
+    normalize: bool = True,
 ) -> T.Compose:
     """Base image transforms for self-supervised training.
     Applies randomized die noise, converts to PIL Image, resizes, rotates, flips, and optionally converts to tensor.
@@ -92,6 +96,10 @@ def get_base_transforms(
     # Optionally convert to tensor
     if to_tensor:
         transforms.append(T.ToTensor())
+
+    # Optionally normalize
+    if normalize:
+        transforms.append(T.Normalize(*normalization_stats))
 
     return T.Compose(transforms)
 
@@ -390,6 +398,7 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
             T.RandomHorizontalFlip(hf_prob),
             T.Grayscale(num_output_channels=3),
             T.ToTensor(),
+            T.Normalize(*normalization_stats),
         ]
 
         super().__init__([T.Compose(transforms)])
