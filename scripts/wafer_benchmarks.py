@@ -91,7 +91,7 @@ from utilities.benchmarking import KNNBenchmarkModule
 from utilities.data import *
 from utilities.losses import PMSNLoss
 
-torch.set_float32_matmul_precision("high")
+torch.set_float32_matmul_precision("medium")
 
 # suppress annoying torchmetrics and lightning warnings
 warnings.filterwarnings("ignore", ".*has Tensor cores.*")
@@ -192,6 +192,7 @@ mae_collate_fn = WaferMAECollateFunction([224, 224], 0.0, 0.0)
 
 swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
+
 # %%
 def get_data_loaders(batch_size: int, model):
     """Helper method to create dataloaders for ssl, kNN train and kNN test
@@ -225,7 +226,8 @@ def get_data_loaders(batch_size: int, model):
             shuffle=True,
             collate_fn=col_fn,
             drop_last=True,
-            # num_workers=num_workers,
+            num_workers=num_workers,
+            pin_memory=True,
         )
         if model != SupervisedR18
         else DataLoader(
@@ -233,7 +235,8 @@ def get_data_loaders(batch_size: int, model):
             batch_size=batch_size,
             shuffle=True,
             drop_last=True,
-            # num_workers=num_workers,
+            num_workers=num_workers,
+            pin_memory=True,
         )
     )
 
@@ -242,7 +245,8 @@ def get_data_loaders(batch_size: int, model):
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        # num_workers=num_workers,
+        num_workers=num_workers,
+        pin_memory=True,
     )
 
     dataloader_test = DataLoader(
@@ -250,7 +254,8 @@ def get_data_loaders(batch_size: int, model):
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        # num_workers=num_workers,
+        num_workers=num_workers,
+        pin_memory=True,
     )
 
     return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
@@ -1336,7 +1341,7 @@ models = [
     # FastSiamSymmetrizedModel,
     # FastSiamModel,
     # SupervisedR18,
-    MAEModel,
+    # MAEModel,
     # SimCLRModel,
     # MocoModel,
     # BarlowTwinsModel,
@@ -1392,6 +1397,7 @@ for BenchmarkModel in models:
             callbacks=[checkpoint_callback, RichProgressBar()],
             enable_progress_bar=True,
             devices=gpus,
+            precision=16,
         )
         start = time.time()
         trainer.fit(
