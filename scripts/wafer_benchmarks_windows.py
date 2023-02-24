@@ -88,6 +88,7 @@ from utilities.data import *
 from utilities.losses import PMSNLoss
 
 
+# Lazy way to get multiprocessing to work on Windows
 def main():
 
     torch.set_float32_matmul_precision("medium")
@@ -228,6 +229,7 @@ def main():
                 drop_last=True,
                 num_workers=num_workers,
                 pin_memory=True,
+                persistent_workers=True,
             )
             if model != SupervisedR18
             else DataLoader(
@@ -237,6 +239,7 @@ def main():
                 drop_last=True,
                 num_workers=num_workers,
                 pin_memory=True,
+                persistent_workers=True,
             )
         )
 
@@ -247,6 +250,7 @@ def main():
             drop_last=False,
             num_workers=num_workers,
             pin_memory=True,
+            persistent_workers=True,
         )
 
         dataloader_test = DataLoader(
@@ -256,6 +260,7 @@ def main():
             drop_last=False,
             num_workers=num_workers,
             pin_memory=True,
+            persistent_workers=True,
         )
 
         return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
@@ -1391,7 +1396,8 @@ def main():
                 # Save results of all models under same version directory
                 experiment_version = logger.version
             checkpoint_callback = pl.callbacks.ModelCheckpoint(
-                dirpath=os.path.join(logger.log_dir, "checkpoints")
+                dirpath=os.path.join(logger.log_dir, "checkpoints"),
+                every_n_epochs=max_epochs // 20,
             )
             trainer = pl.Trainer(
                 max_epochs=max_epochs,
@@ -1484,6 +1490,9 @@ def main():
     print("-" * len(header))
 
 
+# To get num_workers > 0 for DataLoaders on Windows, do the following:
+# Use a __main__ guard to prevent spawning of multiple processes
+# And set pin_memory=True and persistent_workers=True
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", True)
     multiprocessing.freeze_support()
