@@ -130,7 +130,7 @@ def main():
 
     # benchmark
     n_runs = 1  # optional, increase to create multiple runs and report mean + std
-    batch_size = 32
+    batch_size = 64
     lr_factor = batch_size / 256  #  scales the learning rate linearly with batch size
 
     # use a GPU if available
@@ -1349,14 +1349,13 @@ def main():
                 )
 
     models = [
-        # FastSiamSymmetrizedModel,
-        # # FastSiamModel,
-        # SupervisedR18,
-        # MAEModel,
-        # SimCLRModel,
-        # MocoModel,
+        FastSiamSymmetrizedModel,
+        SupervisedR18,
+        MAEModel,
+        SimCLRModel,
+        MocoModel,
         # BarlowTwinsModel,
-        BYOLModel,
+        # BYOLModel,
         # DCLW,
         # SimSiamModel,
         # VICRegModel,
@@ -1424,7 +1423,7 @@ def main():
             end = time.time()
             run = {
                 "model": model_name,
-                "batch_size": batch_size,
+                "batch_size": dataloader_train_ssl.batch_size,  # batch_size of the dataloader, not the global batch size
                 "epochs": trainer.current_epoch,
                 "params": f"{sum(p.numel() for p in benchmark_model.parameters() if p.requires_grad) / 1_000_000:.1f}M",
                 "max_accuracy": benchmark_model.max_accuracy,

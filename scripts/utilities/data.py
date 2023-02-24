@@ -406,7 +406,7 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
             T.RandomHorizontalFlip(hf_prob),
             T.Grayscale(num_output_channels=3),
             T.ToTensor(),
-            T.Normalize(*normalization_stats),
+            # T.Normalize(*normalization_stats),
         ]
 
         super().__init__([T.Compose(transforms)])
