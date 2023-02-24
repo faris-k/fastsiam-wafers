@@ -204,15 +204,19 @@ def main():
         # By default, use the base collate function
         col_fn = collate_fn
         # if the model is any of the DINO models, we use the DINO collate function
-        if model == DINOModel or model == DINOXCiTModel or model == DINOViTModel:
+        if model == DINOModel:
             col_fn = dino_collate_fn
-        elif model == DINOConvNeXtModel:
+        elif (
+            model == DINOConvNeXtModel
+            or model == DINOXCiTModel
+            or model == DINOViTModel
+        ):
             # ConvNeXt uses high memory, so use smaller resolutions than 224x224
-            col_fn = WaferDINOCOllateFunction(
-                global_crop_size=200, local_crop_size=200 // 2
-            )
+            col_fn = dino_collate_fn
+            # batch_size = 32
         elif model == MSNModel or model == MSNViTModel or model == PMSNModel:
             col_fn = msn_collate_fn
+            # batch_size = 32
         elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
             col_fn = fastsiam_collate_fn
         elif model == MAEModel:
@@ -1346,7 +1350,7 @@ def main():
 
     models = [
         # FastSiamSymmetrizedModel,
-        # FastSiamModel,
+        # # FastSiamModel,
         # SupervisedR18,
         # MAEModel,
         # SimCLRModel,
@@ -1361,8 +1365,8 @@ def main():
         # MSNModel,
         # PMSNModel,
         # DINOViTModel,
-        # # DINOConvNeXtModel,
-        # # DINOXCiTModel,
+        # DINOConvNeXtModel,
+        # DINOXCiTModel,
     ]
     bench_results = dict()
 
@@ -1409,7 +1413,7 @@ def main():
                 callbacks=[checkpoint_callback, RichProgressBar()],
                 enable_progress_bar=True,
                 devices=gpus,
-                precision=16,
+                precision=16 if BenchmarkModel != MAEModel else 32,
             )
             start = time.time()
             trainer.fit(

@@ -241,6 +241,7 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
             rr_prob=rr_prob,
             rr_prob2=rr_prob2,
             to_tensor=False,
+            normalize=False,
         )
 
         global_crop = T.RandomResizedCrop(
@@ -262,6 +263,7 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
                 base_transform,
                 global_crop,
                 T.ToTensor(),
+                T.Normalize(*normalization_stats),
             ]
         )
 
@@ -270,6 +272,7 @@ class WaferDINOCOllateFunction(MultiViewCollateFunction):
                 base_transform,
                 local_crop,
                 T.ToTensor(),
+                T.Normalize(*normalization_stats),
             ]
         )
 
@@ -337,6 +340,7 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
             rr_prob=rr_prob,
             rr_prob2=rr_prob2,
             to_tensor=False,
+            normalize=False,
         )
 
         # Create separate transforms for random and focal views
@@ -349,6 +353,7 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
                     interpolation=InterpolationMode.NEAREST,
                 ),
                 T.ToTensor(),
+                T.Normalize(*normalization_stats),
             ]
         )
         focal_crop = T.Compose(
@@ -360,6 +365,7 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
                     interpolation=InterpolationMode.NEAREST,
                 ),
                 T.ToTensor(),
+                T.Normalize(*normalization_stats),
             ]
         )
 
