@@ -56,6 +56,19 @@ The following is on an RTX 3080 Ti.
 | VICReg        |         32 |    200 |              0.590 |              0.608 |  258.0 Min |      1.7 GByte |
 | PMSN          |         32 |    200 |              0.622 |              0.646 |  795.4 Min |      6.4 GByte |
 ---------------------------------------------------------------------------------------------------------------
+
+Re-running with larger batch size, normalization, and mixed precision.
+------------------------------------------------------------------------------------------------------------------------
+| Model         | Batch Size | Epochs |  #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
+------------------------------------------------------------------------------------------------------------------------
+| FastSiam      |         64 |    200 |    22.7M |              0.536 |            0.563 |  203.7 Min |      3.4 GByte |
+| SupervisedR18 |         64 |    200 |    11.2M |              0.751 |            0.734 |   82.9 Min |      1.0 GByte |
+| MAE           |         64 |    200 |    93.4M |              0.569 |            0.587 |   78.1 Min |      2.2 GByte |
+| SimCLR        |         64 |    200 |    11.5M |              0.649 |            0.653 |  120.0 Min |      1.7 GByte |
+| Moco          |         64 |    200 |    12.5M |              0.641 |            0.648 |  124.8 Min |      2.0 GByte |
+| BarlowTwins   |         64 |     90 |    20.6M |              0.111 |            0.004 |   75.6 Min |      2.0 GByte |
+| BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
+------------------------------------------------------------------------------------------------------------------------
 """
 
 import copy
@@ -177,7 +190,9 @@ def main():
     # %%
     # Base collate function for basic joint embedding frameworks
     # e.g. SimCLR, MoCo, BYOL, Barlow Twins, DCLW, SimSiam
-    collate_fn = WaferImageCollateFunction([input_size, input_size])
+    collate_fn = WaferImageCollateFunction(
+        img_size=[input_size, input_size], normalize=False
+    )
 
     # DINO, FastSiam, MSN, MAE, SwaV all need their own collate functions
     dino_collate_fn = WaferDINOCOllateFunction(
@@ -1349,8 +1364,8 @@ def main():
                 )
 
     models = [
-        FastSiamSymmetrizedModel,
-        SupervisedR18,
+        # FastSiamSymmetrizedModel,
+        # SupervisedR18,
         MAEModel,
         SimCLRModel,
         MocoModel,

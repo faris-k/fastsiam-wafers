@@ -134,6 +134,7 @@ class WaferImageCollateFunction(BaseCollateFunction):
         vf_prob: float = 0.5,
         rr_prob: float = 0.5,
         rr_prob2: float = 0.25,
+        normalize: bool = True,
     ):
 
         transforms = get_base_transforms(
@@ -144,6 +145,7 @@ class WaferImageCollateFunction(BaseCollateFunction):
             rr_prob=rr_prob,
             rr_prob2=rr_prob2,
             to_tensor=True,
+            normalize=normalize,
         )
         super().__init__(transforms)
 
