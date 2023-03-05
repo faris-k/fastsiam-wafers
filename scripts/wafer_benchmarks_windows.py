@@ -287,7 +287,9 @@ def main():
     class SupervisedR18(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             self.fc = timm.create_model("resnet18", num_classes=9).get_classifier()
 
         def forward(self, x):
@@ -313,7 +315,9 @@ def main():
 
             # create a ResNet backbone and remove the classification head
             num_splits = 0 if sync_batchnorm else 8
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
 
             # create a moco model based on ResNet
@@ -378,7 +382,9 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.SimCLRProjectionHead(
                 feature_dim, feature_dim, 128
@@ -411,7 +417,9 @@ def main():
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
 
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
             self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -446,7 +454,9 @@ def main():
     class FastSiamModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
             self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -494,7 +504,9 @@ def main():
     class FastSiamSymmetrizedModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
             self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -539,7 +551,9 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             # use a 2-layer projection head for cifar10 as described in the paper
             self.projection_head = heads.BarlowTwinsProjectionHead(
@@ -575,7 +589,11 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18",
+                num_classes=0,
+                pretrained=True,
+            )
             feature_dim = self.backbone.num_features
 
             # create a byol model based on ResNet
@@ -635,7 +653,9 @@ def main():
     class DINOModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
 
             self.head = heads.DINOProjectionHead(
@@ -688,7 +708,9 @@ def main():
     class DINOConvNeXtModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("convnextv2_nano", num_classes=0)
+            self.backbone = timm.create_model(
+                "convnextv2_nano", num_classes=0, pretrained=True
+            )
             feature_dim = (
                 timm.create_model("convnextv2_nano").get_classifier().in_features
             )
@@ -743,7 +765,9 @@ def main():
     class DINOXCiTModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
-            self.backbone = timm.create_model("xcit_tiny_12_p16_224", num_classes=0)
+            self.backbone = timm.create_model(
+                "xcit_tiny_12_p16_224", num_classes=0, pretrained=True
+            )
             feature_dim = (
                 timm.create_model("xcit_tiny_12_p16_224").get_classifier().in_features
             )
@@ -804,7 +828,7 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             self.backbone = torch.hub.load(
-                "facebookresearch/dino:main", "dino_vits16", pretrained=False
+                "facebookresearch/dino:main", "dino_vits16", pretrained=True
             )
             feature_dim = self.backbone.embed_dim
 
@@ -860,7 +884,7 @@ def main():
             super().__init__(dataloader_kNN, num_classes, **kwargs)
 
             decoder_dim = 512
-            vit = torchvision.models.vit_b_32()
+            vit = torchvision.models.vit_b_32(weights="DEFAULT")
 
             self.warmup_epochs = 40 if max_epochs >= 800 else 20
             self.mask_ratio = 0.75
@@ -1235,7 +1259,9 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
 
             self.projection_head = heads.SwaVProjectionHead(feature_dim, 2048, 128)
@@ -1285,7 +1311,9 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.SimCLRProjectionHead(
                 feature_dim, feature_dim, 128
@@ -1317,7 +1345,9 @@ def main():
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
             # create a ResNet backbone and remove the classification head
-            self.backbone = timm.create_model("resnet18", num_classes=0)
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=True
+            )
             feature_dim = self.backbone.num_features
             self.projection_head = heads.BarlowTwinsProjectionHead(
                 feature_dim, 2048, 2048
