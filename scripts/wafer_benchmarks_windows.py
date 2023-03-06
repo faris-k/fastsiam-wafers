@@ -57,7 +57,7 @@ The following is on an RTX 3080 Ti.
 | PMSN          |         32 |    200 |              0.622 |              0.646 |  795.4 Min |      6.4 GByte |
 ---------------------------------------------------------------------------------------------------------------
 
-Re-running with larger batch size, normalization, and mixed precision.
+Re-running with larger batch size, normalization, and mixed precision. (This was before DPWTransform and pretrained wts.)
 ------------------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
 ------------------------------------------------------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def main():
     memory_bank_size = 4096
 
     # set max_epochs to 800 for long run (takes around 10h on a single V100)
-    max_epochs = 4
+    max_epochs = 200
     knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
     knn_t = 0.1
     classes = 9
@@ -1531,7 +1531,7 @@ def main():
             )
             benchmark_model = BenchmarkModel(dataloader_train_kNN, classes, knn_k=knn_k)
 
-            # Save logs to: {CWD}/benchmark_logs/cifar10/{experiment_version}/{model_name}/
+            # Save logs to: {CWD}/benchmark_logs/wafermaps/{experiment_version}/{model_name}/
             # If multiple runs are specified a subdirectory for each run is created.
             sub_dir = model_name if n_runs <= 1 else f"{model_name}/run{seed}"
             logger = TensorBoardLogger(
@@ -1572,11 +1572,14 @@ def main():
                 "model": model_name,
                 "batch_size": dataloader_train_ssl.batch_size,  # batch_size of the dataloader, not the global batch size
                 "epochs": trainer.current_epoch,
-                "params": f"{sum(p.numel() for p in benchmark_model.parameters() if p.requires_grad) / 1_000_000:.1f}M",
+                "params": sum(
+                    p.numel() for p in benchmark_model.parameters() if p.requires_grad
+                )
+                / 1_000_000,
                 "max_accuracy": benchmark_model.max_accuracy,
                 "max_f1": benchmark_model.max_f1,
                 "runtime": end - start,
-                "gpu_memory_usage": torch.cuda.max_memory_allocated(),
+                "gpu_memory_usage": torch.cuda.max_memory_allocated() / (1024**3),
                 "seed": seed,
             }
             runs.append(run)
@@ -1609,7 +1612,7 @@ def main():
 
     #  print results table
     header = (
-        f"| {'Model':<13} | {'Batch Size':>10} | {'Epochs':>6} | {'#param.':>8} "
+        f"| {'Model':<13} | {'Batch Size':>10} | {'Epochs':>6} | {'#param.':>9} "
         f"| {'KNN Test Accuracy':>18} | {'KNN Test F1':>16} | {'Time':>10} | {'Peak GPU Usage':>14} |"
     )
     print("-" * len(header))
@@ -1622,7 +1625,7 @@ def main():
         accuracy = np.array([result["max_accuracy"] for result in results])
         f1 = np.array([result["max_f1"] for result in results])
         gpu_memory_usage = np.array([result["gpu_memory_usage"] for result in results])
-        gpu_memory_usage = gpu_memory_usage.max() / (1024**3)  #  convert to gbyte
+        gpu_memory_usage = gpu_memory_usage.max()
         epochs = np.array([result["epochs"] for result in results])
         epochs = int(epochs.mean())
         params = results[0]["params"]
@@ -1637,7 +1640,7 @@ def main():
             f1_msg = f"{f1.mean():>16.3f}"
 
         print(
-            f"| {model:<13} | {batch_size:>10} | {epochs:>6} | {params:>8} "
+            f"| {model:<13} | {batch_size:>10} | {epochs:>6} | {params:>8.1f}M "
             f"| {accuracy_msg} | {f1_msg} | {runtime:>6.1f} Min "
             f"| {gpu_memory_usage:>8.1f} GByte |",
             flush=True,
