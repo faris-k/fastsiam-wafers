@@ -69,6 +69,19 @@ Re-running with larger batch size, normalization, and mixed precision. (This was
 | BarlowTwins   |         64 |     90 |    20.6M |              0.111 |            0.004 |   75.6 Min |      2.0 GByte |
 | BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
 ------------------------------------------------------------------------------------------------------------------------
+
+Re-running with pretraining and DPWTransform.
+-------------------------------------------------------------------------------------------------------------------------
+| Model         | Batch Size | Epochs |   #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
+-------------------------------------------------------------------------------------------------------------------------
+| BYOL          |         64 |    200 |     16.4M |              0.640 |            0.650 |  137.5 Min |      2.0 GByte |
+| MAE2*         |         64 |    200 |     93.4M |              0.657 |            0.649 |  124.4 Min |      2.2 GByte |
+| MAE           |         64 |    200 |     93.4M |              0.659 |            0.686 |  126.9 Min |      2.2 GByte |
+| SimCLR        |         64 |    200 |     11.5M |              0.605 |            0.608 |  130.1 Min |      1.7 GByte |
+| FastSiamSymm  |         64 |    200 |     22.7M |              0.507 |            0.538 |  219.0 Min |      3.4 GByte |
+| Moco          |         64 |    200 |     12.5M |              0.629 |            0.644 |  139.1 Min |      2.0 GByte |
+-------------------------------------------------------------------------------------------------------------------------
+*MAE2 is MAE but we use all the augmentations as the other models. Normal MAE uses only flipping/rotating, no normalization either.
 """
 
 import copy
