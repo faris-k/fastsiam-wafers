@@ -6,7 +6,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lightly.utils import knn_predict
+from lightly.utils.benchmarking import knn_predict
 from PIL import Image
 from torch.utils.data import DataLoader
 from torchmetrics.classification import (

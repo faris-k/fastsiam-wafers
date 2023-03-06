@@ -103,7 +103,6 @@ from utilities.losses import PMSNLoss
 
 # Lazy way to get multiprocessing to work on Windows
 def main():
-
     torch.set_float32_matmul_precision("medium")
 
     # suppress annoying torchmetrics and lightning warnings
@@ -121,7 +120,7 @@ def main():
     memory_bank_size = 4096
 
     # set max_epochs to 800 for long run (takes around 10h on a single V100)
-    max_epochs = 200
+    max_epochs = 4
     knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
     knn_t = 0.1
     classes = 9
@@ -191,7 +190,7 @@ def main():
     # Base collate function for basic joint embedding frameworks
     # e.g. SimCLR, MoCo, BYOL, Barlow Twins, DCLW, SimSiam
     collate_fn = WaferImageCollateFunction(
-        img_size=[input_size, input_size], normalize=False
+        img_size=[input_size, input_size], normalize=True
     )
 
     # DINO, FastSiam, MSN, MAE, SwaV all need their own collate functions
@@ -206,6 +205,8 @@ def main():
     )
 
     mae_collate_fn = WaferMAECollateFunction([224, 224], 0.0, 0.0)
+
+    mae2_collate_fn = WaferMAECollateFunction2([224, 224])
 
     swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
@@ -236,6 +237,8 @@ def main():
             col_fn = fastsiam_collate_fn
         elif model == MAEModel:
             col_fn = mae_collate_fn
+        elif model == MAE2Model:
+            col_fn = mae2_collate_fn
         elif model == SwaVModel:
             col_fn = swav_collate_fn
 
@@ -975,6 +978,102 @@ def main():
                     )
                 )
 
+    class MAE2Model(KNNBenchmarkModule):
+        def __init__(self, dataloader_kNN, num_classes, **kwargs):
+            super().__init__(dataloader_kNN, num_classes, **kwargs)
+
+            decoder_dim = 512
+            vit = torchvision.models.vit_b_32(weights="DEFAULT")
+
+            self.warmup_epochs = 40 if max_epochs >= 800 else 20
+            self.mask_ratio = 0.75
+            self.patch_size = vit.patch_size
+            self.sequence_length = vit.seq_length
+            self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_dim))
+            self.backbone = masked_autoencoder.MAEBackbone.from_vit(vit)
+            self.decoder = masked_autoencoder.MAEDecoder(
+                seq_length=vit.seq_length,
+                num_layers=1,
+                num_heads=16,
+                embed_input_dim=vit.hidden_dim,
+                hidden_dim=decoder_dim,
+                mlp_dim=decoder_dim * 4,
+                out_dim=vit.patch_size**2 * 3,
+                dropout=0,
+                attention_dropout=0,
+            )
+            self.criterion = nn.MSELoss()
+
+        def forward_encoder(self, images, idx_keep=None):
+            out = self.backbone.encode(images, idx_keep)
+            self.log(
+                "rep_std", lightly.utils.debug.std_of_l2_normalized(out.flatten(1))
+            )
+            return out
+
+        def forward_decoder(self, x_encoded, idx_keep, idx_mask):
+            # build decoder input
+            batch_size = x_encoded.shape[0]
+            x_decode = self.decoder.embed(x_encoded)
+            x_masked = utils.repeat_token(
+                self.mask_token, (batch_size, self.sequence_length)
+            )
+            x_masked = utils.set_at_index(x_masked, idx_keep, x_decode)
+
+            # decoder forward pass
+            x_decoded = self.decoder.decode(x_masked)
+
+            # predict pixel values for masked tokens
+            x_pred = utils.get_at_index(x_decoded, idx_mask)
+            x_pred = self.decoder.predict(x_pred)
+            return x_pred
+
+        def training_step(self, batch, batch_idx):
+            images, _, _ = batch
+
+            batch_size = images.shape[0]
+            idx_keep, idx_mask = utils.random_token_mask(
+                size=(batch_size, self.sequence_length),
+                mask_ratio=self.mask_ratio,
+                device=images.device,
+            )
+            x_encoded = self.forward_encoder(images, idx_keep)
+            x_pred = self.forward_decoder(x_encoded, idx_keep, idx_mask)
+
+            # get image patches for masked tokens
+            patches = utils.patchify(images, self.patch_size)
+            # must adjust idx_mask for missing class token
+            target = utils.get_at_index(patches, idx_mask - 1)
+
+            loss = self.criterion(x_pred, target)
+            self.log("train_loss_ssl", loss)
+            return loss
+
+        def configure_optimizers(self):
+            optim = torch.optim.AdamW(
+                self.parameters(),
+                lr=1.5e-4 * lr_factor,
+                weight_decay=0.05,
+                betas=(0.9, 0.95),
+            )
+            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                optim, self.scale_lr
+            )
+            return [optim], [cosine_with_warmup_scheduler]
+
+        def scale_lr(self, epoch):
+            if epoch < self.warmup_epochs:
+                return epoch / self.warmup_epochs
+            else:
+                return 0.5 * (
+                    1.0
+                    + math.cos(
+                        math.pi
+                        * (epoch - self.warmup_epochs)
+                        / (max_epochs - self.warmup_epochs)
+                    )
+                )
+
     class MSNModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -1394,13 +1493,14 @@ def main():
                 )
 
     models = [
-        # FastSiamSymmetrizedModel,
         # SupervisedR18,
-        # MAEModel,
-        # SimCLRModel,
-        # MocoModel,
-        # BarlowTwinsModel,
         BYOLModel,
+        MAE2Model,
+        MAEModel,
+        SimCLRModel,
+        FastSiamSymmetrizedModel,
+        MocoModel,
+        # BarlowTwinsModel,
         # DCLW,
         # SimSiamModel,
         # VICRegModel,
@@ -1457,7 +1557,9 @@ def main():
                 callbacks=[checkpoint_callback, RichProgressBar()],
                 enable_progress_bar=True,
                 devices=gpus,
-                precision=16 if BenchmarkModel != MAEModel else 32,
+                precision=16
+                if (BenchmarkModel != MAEModel and BenchmarkModel != MAE2Model)
+                else 32,
             )
             start = time.time()
             trainer.fit(
@@ -1490,6 +1592,11 @@ def main():
             np.savez_compressed(
                 os.path.join(logger.log_dir, "confusion_matrix.npz"),
                 confusion_matrix=stacked_cm,
+            )
+
+            # Save the results dictionary to file
+            pd.DataFrame(runs).to_csv(
+                os.path.join(logger.log_dir, "results.csv"), index=False
             )
 
             # delete model and trainer + free up cuda memory
@@ -1545,3 +1652,5 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", True)
     multiprocessing.freeze_support()
     main()
+# %%
+#

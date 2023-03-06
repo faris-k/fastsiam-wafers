@@ -238,10 +238,12 @@ class DPWTransform:
         new_w = int(w * scale)
 
         # Find the indices of the passing elements in the original wafer
-        passing_indices = torch.argwhere(wafermap == 128)  # (wafermap == 128).nonzero()
+        # passing_indices = torch.argwhere(wafermap == 128)
+        passing_indices = (wafermap == 128).nonzero()
 
         # Find the indices of the failing elements in the original wafer
-        failing_indices = torch.argwhere(wafermap == 255)  # (wafermap == 255).nonzero()
+        # failing_indices = torch.argwhere(wafermap == 255)
+        failing_indices = (wafermap == 255).nonzero()
 
         # Calculate the relative central coordinate of the passing and failing elements in the original wafer
         pass_coords = (passing_indices + 0.5) / torch.tensor(wafermap.shape)
@@ -289,7 +291,7 @@ normalization_stats = torch.load(norm_dir)
 
 
 def get_base_transforms(
-    img_size: List[int] = [200, 200],
+    img_size: List[int] = [224, 224],
     die_noise_prob: float = 0.03,
     rr_prob: float = 0.5,
     hf_prob: float = 0.5,
@@ -304,7 +306,7 @@ def get_base_transforms(
     Parameters
     ----------
     img_size : List[int], optional
-        Size of image, by default [200, 200]
+        Size of image, by default [224, 224]
     die_noise_prob : float, optional
         Probability of adding die noise, by default 0.03
     rr_prob : float, optional
@@ -336,12 +338,12 @@ def get_base_transforms(
         RandomRotate(rr_prob),
         T.RandomVerticalFlip(vf_prob),
         T.RandomHorizontalFlip(hf_prob),
-        T.RandomApply(
-            torch.nn.ModuleList(
-                [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
-            ),
-            rr_prob2,
-        ),
+        # T.RandomApply(
+        #     torch.nn.ModuleList(
+        #         [T.RandomRotation(90, interpolation=InterpolationMode.NEAREST)]
+        #     ),
+        #     rr_prob2,
+        # ),
         # Finally, create a 3-channel image and convert to tensor
         T.Grayscale(num_output_channels=3),  # R == G == B
     ]
@@ -364,7 +366,7 @@ class WaferImageCollateFunction(BaseCollateFunction):
     Parameters
     ----------
     img_size : List[int], optional
-        Size of augmented images, by default [200, 200]
+        Size of augmented images, by default [224, 224]
     die_noise_prob : float, optional
         Probability of applying die noise on a per-die basis, by default 0.03
     hf_prob : float, optional
@@ -379,7 +381,7 @@ class WaferImageCollateFunction(BaseCollateFunction):
 
     def __init__(
         self,
-        img_size: List[int] = [200, 200],
+        img_size: List[int] = [224, 224],
         die_noise_prob: float = 0.03,
         hf_prob: float = 0.5,
         vf_prob: float = 0.5,
@@ -407,7 +409,7 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
     Parameters
     ----------
     img_size : List[int], optional
-        Size of augmented images, by default [200, 200]
+        Size of augmented images, by default [224, 224]
     die_noise_prob : float, optional
         Probability of applying die noise on a per-die basis, by default 0.03
     hf_prob : float, optional
@@ -422,12 +424,13 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
 
     def __init__(
         self,
-        img_size: List[int] = [200, 200],
+        img_size: List[int] = [224, 224],
         die_noise_prob: float = 0.03,
         hf_prob: float = 0.5,
         vf_prob: float = 0.5,
         rr_prob: float = 0.5,
         rr_prob2: float = 0.25,
+        normalize: bool = True,
     ):
 
         transforms = get_base_transforms(
@@ -438,6 +441,7 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
             rr_prob=rr_prob,
             rr_prob2=rr_prob2,
             to_tensor=True,
+            normalize=normalize,
         )
         super().__init__([transforms] * 4)
 
@@ -639,7 +643,7 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
     Parameters
     ----------
     img_size : List[int], optional
-        Size of the image views, by default [200, 200]
+        Size of the image views, by default [224, 224]
     rr_prob : float, optional
         Probability of rotating the image by 90 degrees, by default 0.5
     hf_prob : float, optional
@@ -648,7 +652,7 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
 
     def __init__(
         self,
-        img_size: List[int] = [200, 200],
+        img_size: List[int] = [224, 224],
         rr_prob: float = 0.5,
         hf_prob: float = 0.5,
     ):
@@ -663,6 +667,39 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
         ]
 
         super().__init__([T.Compose(transforms)])
+
+    def forward(self, batch: List[tuple]):
+        views, labels, fnames = super().forward(batch)
+        # Return only first view as MAE needs only a single view per image.
+        return views[0], labels, fnames
+
+
+class WaferMAECollateFunction2(MultiViewCollateFunction):
+    """WaferMAECollateFunction with transforms."""
+
+    def __init__(
+        self,
+        img_size: List[int] = [224, 224],
+        die_noise_prob: float = 0.03,
+        hf_prob: float = 0.5,
+        vf_prob: float = 0.5,
+        rr_prob: float = 0.5,
+        rr_prob2: float = 0.25,
+        normalize: bool = True,
+    ):
+
+        transforms = get_base_transforms(
+            img_size=img_size,
+            die_noise_prob=die_noise_prob,
+            hf_prob=hf_prob,
+            vf_prob=vf_prob,
+            rr_prob=rr_prob,
+            rr_prob2=rr_prob2,
+            to_tensor=True,
+            normalize=normalize,
+        )
+
+        super().__init__([transforms])
 
     def forward(self, batch: List[tuple]):
         views, labels, fnames = super().forward(batch)
@@ -772,6 +809,7 @@ class WaferSwaVCollateFunction(WaferMultiCropCollateFunction):
         vf_prob: float = 0.5,
         rr_prob: float = 0.5,
         rr_prob2: float = 0.25,
+        normalize: bool = True,
     ):
 
         transforms = get_base_transforms(
@@ -781,6 +819,7 @@ class WaferSwaVCollateFunction(WaferMultiCropCollateFunction):
             hf_prob=hf_prob,
             vf_prob=vf_prob,
             rr_prob2=rr_prob2,
+            normalize=normalize,
         )
 
         super(WaferSwaVCollateFunction, self).__init__(
