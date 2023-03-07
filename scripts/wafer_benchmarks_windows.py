@@ -1,27 +1,6 @@
 # Adapted from https://github.com/lightly-ai/lightly/blob/master/docs/source/getting_started/benchmarks/imagenette_benchmark.py
 """
-1 epoch times to get a sense of the speed of the models. Run on an RTX 3080 Ti.
----------------------------------------------------------------------
-| Model         | Batch Size | Epochs |       Time | Peak GPU Usage |
----------------------------------------------------------------------
-| FastSiam      |         32 |      1 |    1.5 Min |      2.5 GByte |
-| SimSiam       |         32 |      1 |    1.1 Min |      1.4 GByte |
-| SimCLR        |         32 |      1 |    1.0 Min |      1.3 GByte |
-| Moco          |         32 |      1 |    1.2 Min |      1.5 GByte |
-| BarlowTwins   |         32 |      1 |    1.7 Min |      1.6 GByte |
-| BYOL          |         32 |      1 |    1.3 Min |      1.6 GByte |
-| DCLW          |         32 |      1 |    1.1 Min |      1.4 GByte |
-| SwaV          |         32 |      1 |    3.1 Min |      2.3 GByte |
-| DINO          |         32 |      1 |    2.9 Min |      2.5 GByte |
----------------------------------------------------------------------
-| MAE  ViT-B/32 |         32 |      1 |    1.2 Min |      2.0 GByte |
-| MSN  ViT-S/16 |         32 |      1 |    3.2 Min |      4.9 GByte |
-| DINO ViT-S/16 |         32 |      1 |    4.2 Min |      5.9 GByte |
-| DINO ConvNeXt |         32 |      1 |    5.5 Min |      9.0 GByte |
-| DINO XCiT     |         32 |      1 |    6.6 Min |      6.1 GByte |
----------------------------------------------------------------------
-
-Full benchmark for 200 epochs. Run on a GTX 1080 Ti.
+Full benchmark for 200 epochs. Run on a GTX 1080 Ti. This is without DPWTransform and IM pretrained weights.
 ---------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |  KNN Test Accuracy |        KNN Test F1 |       Time | Peak GPU Usage |
 ---------------------------------------------------------------------------------------------------------------
@@ -70,7 +49,7 @@ Re-running with larger batch size, normalization, and mixed precision. (This was
 | BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
 ------------------------------------------------------------------------------------------------------------------------
 
-Re-running with pretraining and DPWTransform.
+Re-running with pretraining and DPWTransform. BYOL-MoCo is V59.
 -------------------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |   #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
 -------------------------------------------------------------------------------------------------------------------------
@@ -102,7 +81,7 @@ import torchvision
 from lightly.data import LightlyDataset
 from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
-from lightly.utils import scheduler
+from lightly.utils import debug, scheduler
 from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
@@ -311,7 +290,7 @@ def main():
         def forward(self, x):
             f = self.backbone(x).flatten(start_dim=1)
             p = self.fc(f)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
+            self.log("rep_std", debug.std_of_l2_normalized(f))
             return F.log_softmax(p, dim=1)
 
         def training_step(self, batch, batch_idx):
@@ -350,7 +329,7 @@ def main():
 
         def forward(self, x):
             x = self.backbone(x).flatten(start_dim=1)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
+            self.log("rep_std", debug.std_of_l2_normalized(x))
             return self.projection_head(x)
 
         def training_step(self, batch, batch_idx):
@@ -410,7 +389,7 @@ def main():
         def forward(self, x):
             x = self.backbone(x).flatten(start_dim=1)
             z = self.projection_head(x)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
+            self.log("rep_std", debug.std_of_l2_normalized(x))
             return z
 
         def training_step(self, batch, batch_index):
@@ -446,7 +425,7 @@ def main():
             z = self.projection_head(f)
             p = self.prediction_head(z)
             z = z.detach()
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
+            self.log("rep_std", debug.std_of_l2_normalized(f))
             return z, p
 
         def training_step(self, batch, batch_idx):
@@ -483,7 +462,7 @@ def main():
             z = self.projection_head(f)
             p = self.prediction_head(z)
             z = z.detach()
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
+            self.log("rep_std", debug.std_of_l2_normalized(f))
             return z, p
 
         def training_step(self, batch, batch_idx):
@@ -533,7 +512,7 @@ def main():
             z = self.projection_head(f)
             p = self.prediction_head(z)
             z = z.detach()
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(f))
+            self.log("rep_std", debug.std_of_l2_normalized(f))
             return z, p
 
         # Symmetrized loss version
@@ -571,19 +550,18 @@ def main():
                 "resnet18", num_classes=0, pretrained=True
             )
             feature_dim = self.backbone.num_features
-            # use a 2-layer projection head for cifar10 as described in the paper
             self.projection_head = heads.BarlowTwinsProjectionHead(
                 feature_dim, 2048, 2048
             )
-
             self.criterion = lightly.loss.BarlowTwinsLoss(
                 gather_distributed=gather_distributed
             )
+            self.warmup_epochs = 40 if max_epochs >= 800 else 20
 
         def forward(self, x):
             x = self.backbone(x).flatten(start_dim=1)
             z = self.projection_head(x)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
+            self.log("rep_std", debug.std_of_l2_normalized(x))
             return z
 
         def training_step(self, batch, batch_index):
@@ -594,12 +572,15 @@ def main():
             self.log("train_loss_ssl", loss)
             return loss
 
+        # Switch from SGD to LARS since SGD diverges; use Lightly's imagenet100 settings
         def configure_optimizers(self):
-            optim = torch.optim.SGD(
-                self.parameters(), lr=6e-2 * lr_factor, momentum=0.9, weight_decay=5e-4
+            optim = Lars(
+                self.parameters(), lr=0.2 * lr_factor, weight_decay=1.5e-6, momentum=0.9
             )
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
-            return [optim], [scheduler]
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
+            )
+            return [optim], [cosine_scheduler]
 
     class BYOLModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -628,7 +609,7 @@ def main():
             y = self.backbone(x).flatten(start_dim=1)
             z = self.projection_head(y)
             p = self.prediction_head(z)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
+            self.log("rep_std", debug.std_of_l2_normalized(y))
             return p
 
         def forward_momentum(self, x):
@@ -690,7 +671,7 @@ def main():
         def forward(self, x):
             y = self.backbone(x).flatten(start_dim=1)
             z = self.head(y)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
+            self.log("rep_std", debug.std_of_l2_normalized(y))
             return z
 
         def forward_teacher(self, x):
@@ -747,7 +728,7 @@ def main():
         def forward(self, x):
             y = self.backbone(x).flatten(start_dim=1)
             z = self.head(y)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
+            self.log("rep_std", debug.std_of_l2_normalized(y))
             return z
 
         def forward_teacher(self, x):
@@ -809,7 +790,7 @@ def main():
         def forward(self, x):
             y = self.backbone(x).flatten(start_dim=1)
             z = self.head(y)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
+            self.log("rep_std", debug.std_of_l2_normalized(y))
             return z
 
         def forward_teacher(self, x):
@@ -864,7 +845,7 @@ def main():
         def forward(self, x):
             y = self.backbone(x).flatten(start_dim=1)
             z = self.head(y)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(y))
+            self.log("rep_std", debug.std_of_l2_normalized(y))
             return z
 
         def forward_teacher(self, x):
@@ -923,9 +904,7 @@ def main():
 
         def forward_encoder(self, images, idx_keep=None):
             out = self.backbone.encode(images, idx_keep)
-            self.log(
-                "rep_std", lightly.utils.debug.std_of_l2_normalized(out.flatten(1))
-            )
+            self.log("rep_std", debug.std_of_l2_normalized(out.flatten(1)))
             return out
 
         def forward_decoder(self, x_encoded, idx_keep, idx_mask):
@@ -1019,9 +998,7 @@ def main():
 
         def forward_encoder(self, images, idx_keep=None):
             out = self.backbone.encode(images, idx_keep)
-            self.log(
-                "rep_std", lightly.utils.debug.std_of_l2_normalized(out.flatten(1))
-            )
+            self.log("rep_std", debug.std_of_l2_normalized(out.flatten(1)))
             return out
 
         def forward_decoder(self, x_encoded, idx_keep, idx_mask):
@@ -1136,7 +1113,7 @@ def main():
             self.log("train_loss_ssl", loss)
             self.log(
                 "rep_std",
-                lightly.utils.debug.std_of_l2_normalized(targets_out.flatten(1)),
+                debug.std_of_l2_normalized(targets_out.flatten(1)),
             )
             return loss
 
@@ -1230,7 +1207,7 @@ def main():
             self.log("train_loss_ssl", loss)
             self.log(
                 "rep_std",
-                lightly.utils.debug.std_of_l2_normalized(targets_out.flatten(1)),
+                debug.std_of_l2_normalized(targets_out.flatten(1)),
             )
             return loss
 
@@ -1385,7 +1362,7 @@ def main():
 
         def forward(self, x):
             x = self.backbone(x).flatten(start_dim=1)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
+            self.log("rep_std", debug.std_of_l2_normalized(x))
             x = self.projection_head(x)
             x = nn.functional.normalize(x, dim=1, p=2)
             return self.prototypes(x)
@@ -1435,7 +1412,7 @@ def main():
         def forward(self, x):
             x = self.backbone(x).flatten(start_dim=1)
             z = self.projection_head(x)
-            self.log("rep_std", lightly.utils.debug.std_of_l2_normalized(x))
+            self.log("rep_std", debug.std_of_l2_normalized(x))
             return z
 
         def training_step(self, batch, batch_index):
@@ -1507,16 +1484,16 @@ def main():
 
     models = [
         # SupervisedR18,
-        BYOLModel,
-        MAE2Model,
-        MAEModel,
-        SimCLRModel,
-        FastSiamSymmetrizedModel,
-        MocoModel,
-        # BarlowTwinsModel,
-        # DCLW,
-        # SimSiamModel,
-        # VICRegModel,
+        # BYOLModel,
+        # MAE2Model,
+        # MAEModel,
+        # SimCLRModel,
+        # FastSiamSymmetrizedModel,
+        # MocoModel,
+        BarlowTwinsModel,
+        DCLW,
+        SimSiamModel,
+        VICRegModel,
         # SwaVModel,
         # DINOModel,
         # MSNModel,
