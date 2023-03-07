@@ -49,7 +49,7 @@ Re-running with larger batch size, normalization, and mixed precision. (This was
 | BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
 ------------------------------------------------------------------------------------------------------------------------
 
-Re-running with pretraining and DPWTransform. BYOL-MoCo is V59.
+Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60.
 -------------------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |   #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
 -------------------------------------------------------------------------------------------------------------------------
@@ -59,6 +59,11 @@ Re-running with pretraining and DPWTransform. BYOL-MoCo is V59.
 | SimCLR        |         64 |    200 |     11.5M |              0.605 |            0.608 |  130.1 Min |      1.7 GByte |
 | FastSiamSymm  |         64 |    200 |     22.7M |              0.507 |            0.538 |  219.0 Min |      3.4 GByte |
 | Moco          |         64 |    200 |     12.5M |              0.629 |            0.644 |  139.1 Min |      2.0 GByte |
+-------------------------------------------------------------------------------------------------------------------------
+| BarlowTwins   |         64 |    200 |     20.6M |              0.645 |            0.657 |  232.4 Min |      2.0 GByte |
+| DCLW          |         64 |    200 |     11.5M |              0.646 |            0.652 |  130.4 Min |      1.7 GByte |
+| SimSiam       |         64 |    200 |     22.7M |              0.544 |            0.519 |  129.3 Min |      1.9 GByte |
+| VICReg        |         64 |    200 |     20.6M |              0.598 |            0.630 |  128.1 Min |      1.8 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 *MAE2 is MAE but we use all the augmentations as the other models. Normal MAE uses only flipping/rotating, no normalization either.
 """
@@ -152,9 +157,6 @@ def main():
     # %%
     # Create a smaller dataset for benchmarking using one of the training splits
     df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
-    # df_train = pd.read_pickle("../data/cleaned_splits/train_data.pkl")
-    # df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
-    # df = pd.concat([df_train, df_val], axis=0)
     X_train, X_val, y_train, y_val = train_test_split(
         df.waferMap, df.failureCode, test_size=0.2, random_state=42
     )
@@ -234,27 +236,15 @@ def main():
         elif model == SwaVModel:
             col_fn = swav_collate_fn
 
-        dataloader_train_ssl = (
-            DataLoader(
-                dataset_train_ssl,
-                batch_size=batch_size,
-                shuffle=True,
-                collate_fn=col_fn,
-                drop_last=True,
-                num_workers=num_workers,
-                pin_memory=True,
-                persistent_workers=True,
-            )
-            if model != SupervisedR18
-            else DataLoader(
-                dataset_train_supervised,
-                batch_size=batch_size,
-                shuffle=True,
-                drop_last=True,
-                num_workers=num_workers,
-                pin_memory=True,
-                persistent_workers=True,
-            )
+        dataloader_train_ssl = DataLoader(
+            dataset_train_ssl if model != SupervisedR18 else dataset_train_supervised,
+            batch_size=batch_size,
+            shuffle=True,
+            collate_fn=col_fn if model != SupervisedR18 else None,
+            drop_last=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=True,
         )
 
         dataloader_train_kNN = DataLoader(
@@ -952,23 +942,10 @@ def main():
                 weight_decay=0.05,
                 betas=(0.9, 0.95),
             )
-            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optim, self.scale_lr
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
             )
-            return [optim], [cosine_with_warmup_scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            return [optim], [cosine_scheduler]
 
     class MAE2Model(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1046,23 +1023,10 @@ def main():
                 weight_decay=0.05,
                 betas=(0.9, 0.95),
             )
-            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optim, self.scale_lr
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
             )
-            return [optim], [cosine_with_warmup_scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            return [optim], [cosine_scheduler]
 
     class MSNModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1140,23 +1104,10 @@ def main():
                 weight_decay=0.05,
                 betas=(0.9, 0.95),
             )
-            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optim, self.scale_lr
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
             )
-            return [optim], [cosine_with_warmup_scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            return [optim], [cosine_scheduler]
 
     class PMSNModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1234,23 +1185,10 @@ def main():
                 weight_decay=0.05,
                 betas=(0.9, 0.95),
             )
-            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optim, self.scale_lr
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
             )
-            return [optim], [cosine_with_warmup_scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            return [optim], [cosine_scheduler]
 
     class MSNViTModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1326,23 +1264,10 @@ def main():
                 weight_decay=0.05,
                 betas=(0.9, 0.95),
             )
-            cosine_with_warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optim, self.scale_lr
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
             )
-            return [optim], [cosine_with_warmup_scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            return [optim], [cosine_scheduler]
 
     class SwaVModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1457,30 +1382,13 @@ def main():
             return loss
 
         def configure_optimizers(self):
-            # optim = LARS(
-            #     self.parameters(),
-            #     lr=0.3 * lr_factor,
-            #     weight_decay=1e-4,
-            #     momentum=0.9,
-            # )
             optim = Lars(
                 self.parameters(), lr=0.3 * lr_factor, weight_decay=1e-4, momentum=0.9
             )
-            scheduler = torch.optim.lr_scheduler.LambdaLR(optim, self.scale_lr)
-            return [optim], [scheduler]
-
-        def scale_lr(self, epoch):
-            if epoch < self.warmup_epochs:
-                return epoch / self.warmup_epochs
-            else:
-                return 0.5 * (
-                    1.0
-                    + math.cos(
-                        math.pi
-                        * (epoch - self.warmup_epochs)
-                        / (max_epochs - self.warmup_epochs)
-                    )
-                )
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
+            )
+            return [optim], [cosine_scheduler]
 
     models = [
         # SupervisedR18,
@@ -1490,11 +1398,11 @@ def main():
         # SimCLRModel,
         # FastSiamSymmetrizedModel,
         # MocoModel,
-        BarlowTwinsModel,
-        DCLW,
-        SimSiamModel,
-        VICRegModel,
-        # SwaVModel,
+        # BarlowTwinsModel,
+        # DCLW,
+        # SimSiamModel,
+        # VICRegModel,
+        SwaVModel,
         # DINOModel,
         # MSNModel,
         # PMSNModel,
@@ -1645,5 +1553,3 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", True)
     multiprocessing.freeze_support()
     main()
-# %%
-#
