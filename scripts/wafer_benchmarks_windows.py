@@ -110,7 +110,6 @@ def main():
     warnings.filterwarnings("ignore", ".*log_every_n_steps.*")
     warnings.filterwarnings("ignore", ".*confusion.*")
 
-    # %%
     logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
 
     num_workers = 1
@@ -154,7 +153,6 @@ def main():
         # limit to single gpu if not using distributed training
         gpus = min(gpus, 1)
 
-    # %%
     # Create a smaller dataset for benchmarking using one of the training splits
     df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
     X_train, X_val, y_train, y_val = train_test_split(
@@ -180,7 +178,6 @@ def main():
         transform=get_base_transforms(img_size=[224, 224]),
     )
 
-    # %%
     # Base collate function for basic joint embedding frameworks
     # e.g. SimCLR, MoCo, BYOL, Barlow Twins, DCLW, SimSiam
     collate_fn = WaferImageCollateFunction(
@@ -204,7 +201,6 @@ def main():
 
     swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
-    # %%
     def get_data_loaders(batch_size: int, model):
         """Helper method to create dataloaders for ssl, kNN train and kNN test
 
@@ -904,7 +900,9 @@ def main():
             x_masked = utils.repeat_token(
                 self.mask_token, (batch_size, self.sequence_length)
             )
-            x_masked = utils.set_at_index(x_masked, idx_keep, x_decode)
+            x_masked = utils.set_at_index(
+                x_masked, idx_keep, x_decode.type_as(x_masked)
+            )
 
             # decoder forward pass
             x_decoded = self.decoder.decode(x_masked)
@@ -985,7 +983,9 @@ def main():
             x_masked = utils.repeat_token(
                 self.mask_token, (batch_size, self.sequence_length)
             )
-            x_masked = utils.set_at_index(x_masked, idx_keep, x_decode)
+            x_masked = utils.set_at_index(
+                x_masked, idx_keep, x_decode.type_as(x_masked)
+            )
 
             # decoder forward pass
             x_decoded = self.decoder.decode(x_masked)
@@ -1455,9 +1455,7 @@ def main():
                 callbacks=[checkpoint_callback, RichProgressBar()],
                 enable_progress_bar=True,
                 devices=gpus,
-                precision=16
-                if (BenchmarkModel != MAEModel and BenchmarkModel != MAE2Model)
-                else 32,
+                precision=16,
             )
             start = time.time()
             trainer.fit(
