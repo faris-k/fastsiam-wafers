@@ -49,7 +49,7 @@ Re-running with larger batch size, normalization, and mixed precision. (This was
 | BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
 ------------------------------------------------------------------------------------------------------------------------
 
-Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60.
+Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60. DPWTransform seems to make problem harder.
 -------------------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |   #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
 -------------------------------------------------------------------------------------------------------------------------
@@ -58,12 +58,14 @@ Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60.
 | MAE           |         64 |    200 |     93.4M |              0.659 |            0.686 |  126.9 Min |      2.2 GByte |
 | SimCLR        |         64 |    200 |     11.5M |              0.605 |            0.608 |  130.1 Min |      1.7 GByte |
 | FastSiamSymm  |         64 |    200 |     22.7M |              0.507 |            0.538 |  219.0 Min |      3.4 GByte |
-| Moco          |         64 |    200 |     12.5M |              0.629 |            0.644 |  139.1 Min |      2.0 GByte |
+| MoCo          |         64 |    200 |     12.5M |              0.629 |            0.644 |  139.1 Min |      2.0 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 | BarlowTwins   |         64 |    200 |     20.6M |              0.645 |            0.657 |  232.4 Min |      2.0 GByte |
 | DCLW          |         64 |    200 |     11.5M |              0.646 |            0.652 |  130.4 Min |      1.7 GByte |
 | SimSiam       |         64 |    200 |     22.7M |              0.544 |            0.519 |  129.3 Min |      1.9 GByte |
 | VICReg        |         64 |    200 |     20.6M |              0.598 |            0.630 |  128.1 Min |      1.8 GByte |
+-------------------------------------------------------------------------------------------------------------------------
+| SwaV          |         64 |    200 |     12.6M |              0.591 |            0.601 |  453.9 Min |      2.9 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 *MAE2 is MAE but we use all the augmentations as the other models. Normal MAE uses only flipping/rotating, no normalization either.
 """
@@ -827,6 +829,7 @@ def main():
             utils.deactivate_requires_grad(self.teacher_head)
 
             self.criterion = lightly.loss.DINOLoss(output_dim=2048)
+            self.warmup_epochs = 40 if max_epochs >= 800 else 20
 
         def forward(self, x):
             y = self.backbone(x).flatten(start_dim=1)
@@ -851,16 +854,29 @@ def main():
             self.log("train_loss_ssl", loss)
             return loss
 
+        # Trying out AdamW; authors recommend using this with ViT
         def configure_optimizers(self):
-            param = list(self.backbone.parameters()) + list(self.head.parameters())
-            optim = torch.optim.SGD(
-                param,
-                lr=6e-2 * lr_factor,
-                momentum=0.9,
-                weight_decay=5e-4,
+            optim = torch.optim.AdamW(
+                self.parameters(),
+                lr=1.5e-4 * lr_factor,
+                weight_decay=0.05,
+                betas=(0.9, 0.95),
             )
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
-            return [optim], [scheduler]
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
+            )
+            return [optim], [cosine_scheduler]
+
+        # def configure_optimizers(self):
+        #     param = list(self.backbone.parameters()) + list(self.head.parameters())
+        #     optim = torch.optim.SGD(
+        #         param,
+        #         lr=6e-2 * lr_factor,
+        #         momentum=0.9,
+        #         weight_decay=5e-4,
+        #     )
+        #     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        #     return [optim], [scheduler]
 
     class MAEModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1402,11 +1418,11 @@ def main():
         # DCLW,
         # SimSiamModel,
         # VICRegModel,
-        SwaVModel,
+        # SwaVModel,
         # DINOModel,
-        # MSNModel,
+        MSNModel,
         # PMSNModel,
-        # DINOViTModel,
+        DINOViTModel,
         # DINOConvNeXtModel,
         # DINOXCiTModel,
     ]
