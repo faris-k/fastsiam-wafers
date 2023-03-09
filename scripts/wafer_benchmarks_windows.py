@@ -67,6 +67,9 @@ Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60. DPWTr
 -------------------------------------------------------------------------------------------------------------------------
 | SwaV          |         64 |    200 |     12.6M |              0.591 |            0.601 |  453.9 Min |      2.9 GByte |
 -------------------------------------------------------------------------------------------------------------------------
+| MSN           |         64 |    200 |     27.8M |              0.610 |            0.612 |  423.1 Min |      8.1 GByte |
+| DINOViT       |         64 |    200 |     27.7M |              0.368 |            0.396 |  522.1 Min |     10.2 GByte |
+-------------------------------------------------------------------------------------------------------------------------
 *MAE2 is MAE but we use all the augmentations as the other models. Normal MAE uses only flipping/rotating, no normalization either.
 """
 
@@ -212,24 +215,15 @@ def main():
         # By default, use the base collate function
         col_fn = collate_fn
         # if the model is any of the DINO models, we use the DINO collate function
-        if model == DINOModel:
+        if model == DINOModel or model == DINOViTModel:
             col_fn = dino_collate_fn
-        elif (
-            model == DINOConvNeXtModel
-            or model == DINOXCiTModel
-            or model == DINOViTModel
-        ):
-            # ConvNeXt uses high memory, so use smaller resolutions than 224x224
-            col_fn = dino_collate_fn
-            # batch_size = 32
         elif model == MSNModel or model == MSNViTModel or model == PMSNModel:
             col_fn = msn_collate_fn
-            # batch_size = 32
         elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
             col_fn = fastsiam_collate_fn
         elif model == MAEModel:
             col_fn = mae_collate_fn
-        elif model == MAE2Model:
+        elif model == MAE2Model or model == SimMIMModel:
             col_fn = mae2_collate_fn
         elif model == SwaVModel:
             col_fn = swav_collate_fn
@@ -1044,6 +1038,74 @@ def main():
             )
             return [optim], [cosine_scheduler]
 
+    class SimMIMModel(KNNBenchmarkModule):
+        def __init__(self, dataloader_kNN, num_classes, **kwargs):
+            super().__init__(dataloader_kNN, num_classes, **kwargs)
+
+            vit = torchvision.models.vit_b_32(weights="DEFAULT")
+            self.warmup_epochs = 40 if max_epochs >= 800 else 20
+            decoder_dim = vit.hidden_dim
+            self.mask_ratio = 0.75
+            self.patch_size = vit.patch_size
+            self.sequence_length = vit.seq_length
+            self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_dim))
+
+            # same backbone as MAE
+            self.backbone = masked_autoencoder.MAEBackbone.from_vit(vit)
+
+            # the decoder is a simple linear layer
+            self.decoder = nn.Linear(vit.hidden_dim, vit.patch_size**2 * 3)
+
+            # L1 loss as paper suggestion
+            self.criterion = nn.L1Loss()
+
+        def forward_encoder(self, images, batch_size, idx_mask):
+            # pass all the tokens to the encoder, both masked and non masked ones
+            tokens = self.backbone.images_to_tokens(images, prepend_class_token=True)
+            tokens_masked = utils.mask_at_index(tokens, idx_mask, self.mask_token)
+            return self.backbone.encoder(tokens_masked)
+
+        def forward_decoder(self, x_encoded):
+            return self.decoder(x_encoded)
+
+        def training_step(self, batch, batch_idx):
+            images, _, _ = batch
+
+            batch_size = images.shape[0]
+            idx_keep, idx_mask = utils.random_token_mask(
+                size=(batch_size, self.sequence_length),
+                mask_ratio=self.mask_ratio,
+                device=images.device,
+            )
+
+            # Encoding...
+            x_encoded = self.forward_encoder(images, batch_size, idx_mask)
+            x_encoded_masked = utils.get_at_index(x_encoded, idx_mask)
+
+            # Decoding...
+            x_out = self.forward_decoder(x_encoded_masked)
+
+            # get image patches for masked tokens
+            patches = utils.patchify(images, self.patch_size)
+
+            # must adjust idx_mask for missing class token
+            target = utils.get_at_index(patches, idx_mask - 1)
+
+            loss = self.criterion(x_out, target)
+            return loss
+
+        def configure_optimizers(self):
+            optim = torch.optim.AdamW(
+                self.parameters(),
+                lr=8e-4 * lr_factor,
+                weight_decay=0.05,
+                betas=(0.9, 0.999),
+            )
+            cosine_scheduler = scheduler.CosineWarmupScheduler(
+                optim, self.warmup_epochs, max_epochs
+            )
+            return [optim], [cosine_scheduler]
+
     class MSNModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
             super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -1419,10 +1481,11 @@ def main():
         # SimSiamModel,
         # VICRegModel,
         # SwaVModel,
-        # DINOModel,
-        MSNModel,
-        # PMSNModel,
-        DINOViTModel,
+        SimMIMModel,
+        DINOModel,
+        # MSNModel,
+        PMSNModel,
+        # DINOViTModel,
         # DINOConvNeXtModel,
         # DINOXCiTModel,
     ]
