@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -43,7 +44,7 @@ class PMSNLoss(nn.Module):
         temperature: float = 0.1,
         sinkhorn_iterations: int = 3,
         pmsn_weight: float = 1.0,
-        tau: float = 0.75,
+        tau: float = 0.25,
         gather_distributed: bool = False,
     ):
         super().__init__()
@@ -103,25 +104,32 @@ class PMSNLoss(nn.Module):
         # cross entropy loss
         loss = torch.mean(torch.sum(torch.log(anchor_probs ** (-target_probs)), dim=1))
 
-        # # PMSN loss replaces mean entropy maximization regularization with
-        # # KL divergence to a power law distribution parameterized by tau
+        # PMSN loss replaces mean entropy maximization regularization with
+        # KL divergence to a power law distribution parameterized by tau
         if self.pmsn_weight > 0:
             mean_anchor_probs = torch.mean(anchor_probs, dim=0)
 
+            # Create a tensor of power-law distributed probabilities of size n
             n = len(mean_anchor_probs)
-            norm_const = (self.tau - 1) / (n ** (1 - self.tau) - 1)
-
-            indices = torch.arange(1, n + 1)
-            power_law = norm_const * (indices ** (-self.tau))
+            power_law = np.random.power(self.tau, size=n)
             power_law /= power_law.sum()
-            power_law = power_law.to(mean_anchor_probs.device)
+            power_law = torch.from_numpy(power_law).to(mean_anchor_probs.device)
 
             kl_div = F.kl_div(
-                mean_anchor_probs.log(),
                 power_law.log(),
-                reduction="batchmean",
+                mean_anchor_probs.log(),
+                reduction="none",
                 log_target=True,
-            )
+            ).sum()
+
+            # Calculate KL divergence manually: D_KL(P || Q)
+            # P, Q = mean_anchor_probs, power_law
+            # kl_div_true = (P * (P / Q).log()).sum()
+            # Same as doing F.kl_div(Q.log(), P, reduction="batchmean")
+
+            # print(f"loss: {loss}")
+            # print(f"kl_div: {kl_div}")
+            # print(f"kl_div_true: {kl_div_true}")
             loss += self.pmsn_weight * kl_div
 
         return loss

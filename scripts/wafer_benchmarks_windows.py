@@ -49,7 +49,7 @@ Re-running with larger batch size, normalization, and mixed precision. (This was
 | BYOL          |         64 |    118 |    16.4M |              0.603 |            0.628 |   81.8 Min |      2.0 GByte |
 ------------------------------------------------------------------------------------------------------------------------
 
-Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60. DPWTransform seems to make problem harder.
+Re-running with pretraining and DPWTransform. DPWTransform seems to make problem harder.
 -------------------------------------------------------------------------------------------------------------------------
 | Model         | Batch Size | Epochs |   #param. |  KNN Test Accuracy |      KNN Test F1 |       Time | Peak GPU Usage |
 -------------------------------------------------------------------------------------------------------------------------
@@ -69,6 +69,10 @@ Re-running with pretraining and DPWTransform. BYOL-MoCo is V59. BT-VIC 60. DPWTr
 -------------------------------------------------------------------------------------------------------------------------
 | MSN           |         64 |    200 |     27.8M |              0.610 |            0.612 |  423.1 Min |      8.1 GByte |
 | DINOViT       |         64 |    200 |     27.7M |              0.368 |            0.396 |  522.1 Min |     10.2 GByte |
+-------------------------------------------------------------------------------------------------------------------------
+| PMSN          |         64 |    200 |     27.8M |              0.600 |            0.607 |  422.4 Min |      8.1 GByte |
+| SimMIM        |         64 |    200 |     90.6M |              0.602 |            0.626 |   96.1 Min |      2.9 GByte |
+| DINO          |         64 |    200 |     17.5M |              0.412 |            0.426 |  309.8 Min |      3.0 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 *MAE2 is MAE but we use all the augmentations as the other models. Normal MAE uses only flipping/rotating, no normalization either.
 """
@@ -1092,6 +1096,7 @@ def main():
             target = utils.get_at_index(patches, idx_mask - 1)
 
             loss = self.criterion(x_out, target)
+            self.log("train_loss_ssl", loss)
             return loss
 
         def configure_optimizers(self):
@@ -1457,6 +1462,7 @@ def main():
             z0 = self.forward(x0)
             z1 = self.forward(x1)
             loss = self.criterion(z0, z1)
+            self.log("train_loss_ssl", loss)
             return loss
 
         def configure_optimizers(self):
@@ -1481,13 +1487,11 @@ def main():
         # SimSiamModel,
         # VICRegModel,
         # SwaVModel,
-        SimMIMModel,
-        DINOModel,
-        # MSNModel,
         PMSNModel,
+        # SimMIMModel,
+        # DINOModel,
+        # MSNModel,
         # DINOViTModel,
-        # DINOConvNeXtModel,
-        # DINOXCiTModel,
     ]
     bench_results = dict()
 
