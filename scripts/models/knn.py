@@ -16,7 +16,7 @@ import torchvision
 from lightly.loss.msn_loss import prototype_probabilities, sharpen, sinkhorn
 from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
-from lightly.utils import debug
+from lightly.utils import debug, scheduler
 from lightly.utils.benchmarking import knn_predict
 from PIL import Image
 from timm.optim.lars import Lars
@@ -46,6 +46,7 @@ gather_distributed = False
 batch_size = 64
 lr_factor = batch_size / 256
 max_epochs = 200
+
 
 class PMSNLoss(nn.Module):
     """Implementation of the loss function from PMSN
@@ -165,6 +166,7 @@ class PMSNLoss(nn.Module):
             loss += self.pmsn_weight * kl_div
 
         return loss
+
 
 class KNNBenchmarkModule(pl.LightningModule):
     """A PyTorch Lightning Module for automated kNN callback with support for torchmetrics.
@@ -307,9 +309,7 @@ class KNNBenchmarkModule(pl.LightningModule):
 class SupervisedR18(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         self.fc = timm.create_model("resnet18", num_classes=9).get_classifier()
 
     def forward(self, x):
@@ -329,14 +329,13 @@ class SupervisedR18(KNNBenchmarkModule):
         optim = torch.optim.AdamW(self.parameters())
         return optim
 
+
 class MocoModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
 
         # create a moco model based on ResNet
@@ -361,9 +360,7 @@ class MocoModel(KNNBenchmarkModule):
 
         # update momentum
         utils.update_momentum(self.backbone, self.backbone_momentum, 0.99)
-        utils.update_momentum(
-            self.projection_head, self.projection_head_momentum, 0.99
-        )
+        utils.update_momentum(self.projection_head, self.projection_head_momentum, 0.99)
 
         def step(x0_, x1_):
             x1_, shuffle = utils.batch_shuffle(x1_, distributed=distributed)
@@ -397,17 +394,14 @@ class MocoModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class SimCLRModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
-        self.projection_head = heads.SimCLRProjectionHead(
-            feature_dim, feature_dim, 128
-        )
+        self.projection_head = heads.SimCLRProjectionHead(feature_dim, feature_dim, 128)
         self.criterion = lightly.loss.NTXentLoss()
 
     def forward(self, x):
@@ -431,14 +425,13 @@ class SimCLRModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class SimSiamModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
 
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -470,12 +463,11 @@ class SimSiamModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class FastSiamModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -520,12 +512,11 @@ class FastSiamModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class FastSiamSymmetrizedModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
         self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
         self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
@@ -566,18 +557,15 @@ class FastSiamSymmetrizedModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class BarlowTwinsModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
         # use a 2-layer projection head for cifar10 as described in the paper
-        self.projection_head = heads.BarlowTwinsProjectionHead(
-            feature_dim, 2048, 2048
-        )
+        self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
 
         self.criterion = lightly.loss.BarlowTwinsLoss(
             gather_distributed=gather_distributed
@@ -603,6 +591,7 @@ class BarlowTwinsModel(KNNBenchmarkModule):
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
+
 
 class BYOLModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
@@ -669,12 +658,11 @@ class BYOLModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class DINOModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
 
         self.head = heads.DINOProjectionHead(
@@ -724,15 +712,14 @@ class DINOModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class DINOConvNeXtModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model(
             "convnextv2_nano", num_classes=0, pretrained=True
         )
-        feature_dim = (
-            timm.create_model("convnextv2_nano").get_classifier().in_features
-        )
+        feature_dim = timm.create_model("convnextv2_nano").get_classifier().in_features
 
         self.head = heads.DINOProjectionHead(
             feature_dim, 2048, 256, 2048, batch_norm=True
@@ -780,6 +767,7 @@ class DINOConvNeXtModel(KNNBenchmarkModule):
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
+
 
 class DINOXCiTModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
@@ -843,6 +831,7 @@ class DINOXCiTModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class DINOViTModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -897,6 +886,7 @@ class DINOViTModel(KNNBenchmarkModule):
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
+
 
 class MAEModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
@@ -992,6 +982,7 @@ class MAEModel(KNNBenchmarkModule):
                 )
             )
 
+
 class MAE2Model(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -1086,6 +1077,7 @@ class MAE2Model(KNNBenchmarkModule):
                 )
             )
 
+
 class MSNModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -1115,9 +1107,7 @@ class MSNModel(KNNBenchmarkModule):
 
     def training_step(self, batch, batch_idx):
         utils.update_momentum(self.anchor_backbone, self.backbone, 0.996)
-        utils.update_momentum(
-            self.anchor_projection_head, self.projection_head, 0.996
-        )
+        utils.update_momentum(self.anchor_projection_head, self.projection_head, 0.996)
 
         views, _, _ = batch
         views = [view.to(self.device, non_blocking=True) for view in views]
@@ -1179,6 +1169,7 @@ class MSNModel(KNNBenchmarkModule):
                     / (max_epochs - self.warmup_epochs)
                 )
             )
+
 
 class PMSNModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
@@ -1209,9 +1200,7 @@ class PMSNModel(KNNBenchmarkModule):
 
     def training_step(self, batch, batch_idx):
         utils.update_momentum(self.anchor_backbone, self.backbone, 0.996)
-        utils.update_momentum(
-            self.anchor_projection_head, self.projection_head, 0.996
-        )
+        utils.update_momentum(self.anchor_projection_head, self.projection_head, 0.996)
 
         views, _, _ = batch
         views = [view.to(self.device, non_blocking=True) for view in views]
@@ -1273,6 +1262,7 @@ class PMSNModel(KNNBenchmarkModule):
                     / (max_epochs - self.warmup_epochs)
                 )
             )
+
 
 class MSNViTModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
@@ -1305,9 +1295,7 @@ class MSNViTModel(KNNBenchmarkModule):
 
     def training_step(self, batch, batch_idx):
         utils.update_momentum(self.anchor_backbone, self.backbone, 0.996)
-        utils.update_momentum(
-            self.anchor_projection_head, self.projection_head, 0.996
-        )
+        utils.update_momentum(self.anchor_projection_head, self.projection_head, 0.996)
 
         views, _, _ = batch
         views = [view.to(self.device, non_blocking=True) for view in views]
@@ -1366,13 +1354,12 @@ class MSNViTModel(KNNBenchmarkModule):
                 )
             )
 
+
 class SwaVModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
 
         self.projection_head = heads.SwaVProjectionHead(feature_dim, 2048, 128)
@@ -1418,17 +1405,14 @@ class SwaVModel(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class DCLW(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
-        self.projection_head = heads.SimCLRProjectionHead(
-            feature_dim, feature_dim, 128
-        )
+        self.projection_head = heads.SimCLRProjectionHead(feature_dim, feature_dim, 128)
         self.criterion = lightly.loss.DCLWLoss()
 
     def forward(self, x):
@@ -1452,17 +1436,14 @@ class DCLW(KNNBenchmarkModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
         return [optim], [scheduler]
 
+
 class VICRegModel(KNNBenchmarkModule):
     def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
-        self.backbone = timm.create_model(
-            "resnet18", num_classes=0, pretrained=True
-        )
+        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=True)
         feature_dim = self.backbone.num_features
-        self.projection_head = heads.BarlowTwinsProjectionHead(
-            feature_dim, 2048, 2048
-        )
+        self.projection_head = heads.BarlowTwinsProjectionHead(feature_dim, 2048, 2048)
         self.criterion = lightly.loss.VICRegLoss()
         self.warmup_epochs = 40 if max_epochs >= 800 else 20
 
@@ -1503,3 +1484,73 @@ class VICRegModel(KNNBenchmarkModule):
                     / (max_epochs - self.warmup_epochs)
                 )
             )
+
+
+class SimMIMModel(KNNBenchmarkModule):
+    def __init__(self, dataloader_kNN=None, num_classes=9, **kwargs):
+        super().__init__(dataloader_kNN, num_classes, **kwargs)
+
+        vit = torchvision.models.vit_b_32(weights="DEFAULT")
+        self.warmup_epochs = 40 if max_epochs >= 800 else 20
+        decoder_dim = vit.hidden_dim
+        self.mask_ratio = 0.75
+        self.patch_size = vit.patch_size
+        self.sequence_length = vit.seq_length
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_dim))
+
+        # same backbone as MAE
+        self.backbone = masked_autoencoder.MAEBackbone.from_vit(vit)
+
+        # the decoder is a simple linear layer
+        self.decoder = nn.Linear(vit.hidden_dim, vit.patch_size**2 * 3)
+
+        # L1 loss as paper suggestion
+        self.criterion = nn.L1Loss()
+
+    def forward_encoder(self, images, batch_size, idx_mask):
+        # pass all the tokens to the encoder, both masked and non masked ones
+        tokens = self.backbone.images_to_tokens(images, prepend_class_token=True)
+        tokens_masked = utils.mask_at_index(tokens, idx_mask, self.mask_token)
+        return self.backbone.encoder(tokens_masked)
+
+    def forward_decoder(self, x_encoded):
+        return self.decoder(x_encoded)
+
+    def training_step(self, batch, batch_idx):
+        images, _, _ = batch
+
+        batch_size = images.shape[0]
+        idx_keep, idx_mask = utils.random_token_mask(
+            size=(batch_size, self.sequence_length),
+            mask_ratio=self.mask_ratio,
+            device=images.device,
+        )
+
+        # Encoding...
+        x_encoded = self.forward_encoder(images, batch_size, idx_mask)
+        x_encoded_masked = utils.get_at_index(x_encoded, idx_mask)
+
+        # Decoding...
+        x_out = self.forward_decoder(x_encoded_masked)
+
+        # get image patches for masked tokens
+        patches = utils.patchify(images, self.patch_size)
+
+        # must adjust idx_mask for missing class token
+        target = utils.get_at_index(patches, idx_mask - 1)
+
+        loss = self.criterion(x_out, target)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        optim = torch.optim.AdamW(
+            self.parameters(),
+            lr=8e-4 * lr_factor,
+            weight_decay=0.05,
+            betas=(0.9, 0.999),
+        )
+        cosine_scheduler = scheduler.CosineWarmupScheduler(
+            optim, self.warmup_epochs, max_epochs
+        )
+        return [optim], [cosine_scheduler]

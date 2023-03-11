@@ -70,7 +70,7 @@ Re-running with pretraining and DPWTransform. DPWTransform seems to make problem
 | MSN           |         64 |    200 |     27.8M |              0.610 |            0.612 |  423.1 Min |      8.1 GByte |
 | DINOViT       |         64 |    200 |     27.7M |              0.368 |            0.396 |  522.1 Min |     10.2 GByte |
 -------------------------------------------------------------------------------------------------------------------------
-| PMSN          |         64 |    200 |     27.8M |              0.600 |            0.607 |  422.4 Min |      8.1 GByte |
+| PMSN          |         64 |    200 |     27.8M |              0.595 |            0.624 |  437.0 Min |      8.1 GByte |
 | SimMIM        |         64 |    200 |     90.6M |              0.602 |            0.626 |   96.1 Min |      2.9 GByte |
 | DINO          |         64 |    200 |     17.5M |              0.412 |            0.426 |  309.8 Min |      3.0 GByte |
 -------------------------------------------------------------------------------------------------------------------------
@@ -109,11 +109,11 @@ from utilities.losses import PMSNLoss
 
 # Lazy way to get multiprocessing to work on Windows
 def main():
-    torch.set_float32_matmul_precision("medium")
+    torch.set_num_threads(os.cpu_count())
+    torch.set_float32_matmul_precision("high")
 
     # suppress annoying torchmetrics and lightning warnings
     warnings.filterwarnings("ignore", ".*has Tensor cores.*")
-    warnings.filterwarnings("ignore", ".*interpolation.*")
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
     warnings.filterwarnings("ignore", ".*meaningless.*")
     warnings.filterwarnings("ignore", ".*log_every_n_steps.*")
@@ -121,7 +121,7 @@ def main():
 
     logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
 
-    num_workers = 1
+    num_workers = os.cpu_count()
     memory_bank_size = 4096
 
     # set max_epochs to 800 for long run (takes around 10h on a single V100)
@@ -225,7 +225,7 @@ def main():
             model == MSNModel
             or model == MSNViTModel
             or model == PMSNModel
-            or PMSNModel2
+            or model == PMSNModel2
         ):
             col_fn = msn_collate_fn
         elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
@@ -236,16 +236,18 @@ def main():
             col_fn = mae2_collate_fn
         elif model == SwaVModel:
             col_fn = swav_collate_fn
+        elif model == SupervisedR18:
+            col_fn = None
 
         dataloader_train_ssl = DataLoader(
             dataset_train_ssl if model != SupervisedR18 else dataset_train_supervised,
             batch_size=batch_size,
             shuffle=True,
-            collate_fn=col_fn if model != SupervisedR18 else None,
+            collate_fn=col_fn,
             drop_last=True,
             num_workers=num_workers,
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=True if num_workers > 0 else False,
         )
 
         dataloader_train_kNN = DataLoader(
@@ -255,7 +257,7 @@ def main():
             drop_last=False,
             num_workers=num_workers,
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=True if num_workers > 0 else False,
         )
 
         dataloader_test = DataLoader(
@@ -265,7 +267,7 @@ def main():
             drop_last=False,
             num_workers=num_workers,
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=True if num_workers > 0 else False,
         )
 
         return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
@@ -397,6 +399,53 @@ def main():
             )
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
             return [optim], [scheduler]
+
+    # Test SimCLR with full precision
+    class SimCLRModel2(SimCLRModel):
+        pass
+
+    # Test SimCLR with no pretraining
+    class SimCLRModel3(KNNBenchmarkModule):
+        def __init__(self, dataloader_kNN, num_classes, **kwargs):
+            super().__init__(dataloader_kNN, num_classes, **kwargs)
+            # create a ResNet backbone and remove the classification head
+            self.backbone = timm.create_model(
+                "resnet18", num_classes=0, pretrained=False
+            )
+            feature_dim = self.backbone.num_features
+            self.projection_head = heads.SimCLRProjectionHead(
+                feature_dim, feature_dim, 128
+            )
+            self.criterion = lightly.loss.NTXentLoss()
+
+        def forward(self, x):
+            x = self.backbone(x).flatten(start_dim=1)
+            z = self.projection_head(x)
+            self.log("rep_std", debug.std_of_l2_normalized(x))
+            return z
+
+        def training_step(self, batch, batch_index):
+            (x0, x1), _, _ = batch
+            z0 = self.forward(x0)
+            z1 = self.forward(x1)
+            loss = self.criterion(z0, z1)
+            self.log("train_loss_ssl", loss)
+            return loss
+
+        def configure_optimizers(self):
+            optim = torch.optim.SGD(
+                self.parameters(), lr=6e-2 * lr_factor, momentum=0.9, weight_decay=5e-4
+            )
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+            return [optim], [scheduler]
+
+    # Test SimCLR with no pretraining and full precision
+    class SimCLRModel4(SimCLRModel3):
+        pass
+
+    # Test SimCLR with no pretraining and full precision and double epochs
+    class SimCLRModel5(SimCLRModel3):
+        pass
 
     class SimSiamModel(KNNBenchmarkModule):
         def __init__(self, dataloader_kNN, num_classes, **kwargs):
@@ -1566,6 +1615,10 @@ def main():
         # MAE2Model,
         # MAEModel,
         # SimCLRModel,
+        # SimCLRModel2,
+        # SimCLRModel3,
+        # SimCLRModel4,
+        # SimCLRModel5,
         # FastSiamSymmetrizedModel,
         # MocoModel,
         # BarlowTwinsModel,
@@ -1573,7 +1626,7 @@ def main():
         # SimSiamModel,
         # VICRegModel,
         # SwaVModel,
-        PMSNModel2,
+        # PMSNModel2,
         PMSNModel,
         # SimMIMModel,
         # DINOModel,
@@ -1615,6 +1668,16 @@ def main():
                 dirpath=os.path.join(logger.log_dir, "checkpoints"),
                 every_n_epochs=max_epochs // 20,
             )
+            max_epochs = 400
+            if BenchmarkModel == SimCLRModel or BenchmarkModel == SimCLRModel5:
+                max_epochs *= 2
+            use_amp = True
+            if (
+                BenchmarkModel == SimCLRModel2
+                or BenchmarkModel == SimCLRModel4
+                or BenchmarkModel == SimCLRModel5
+            ):
+                use_amp = False
             trainer = pl.Trainer(
                 max_epochs=max_epochs,
                 accelerator="gpu",
@@ -1625,7 +1688,7 @@ def main():
                 callbacks=[checkpoint_callback, RichProgressBar()],
                 enable_progress_bar=True,
                 devices=gpus,
-                precision=16,
+                precision=16 if use_amp else 32,
             )
             start = time.time()
             trainer.fit(
