@@ -192,3 +192,119 @@ class KNNBenchmarkModule(pl.LightningModule):
         # preds = torch.cat(preds, dim=0)
         images, _, _ = batch
         return self.backbone(images)
+
+
+# modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
+# source is https://arxiv.org/abs/1805.01978
+class KNNBenchmarkModule2(pl.LightningModule):
+    """A PyTorch Lightning Module for automated kNN callback with support for torchmetrics.
+
+    Modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
+    """
+
+    def __init__(
+        self,
+        dataloader_kNN: DataLoader,
+        num_classes: int,
+        knn_k: int = 25,  # TODO: find a good default value, 200 is too high for class imbalance
+        knn_t: float = 0.1,
+    ):
+        super().__init__()
+        self.backbone = nn.Module()
+        self.max_accuracy = 0.0
+        self.max_f1 = 0.0
+        self.dataloader_kNN = dataloader_kNN
+        self.num_classes = num_classes
+        self.knn_k = knn_k
+        self.knn_t = knn_t
+
+        # Initialize metrics for validation; imbalanced classes, so use macro average
+        self.val_accuracy = MulticlassAccuracy(num_classes=num_classes, average="macro")
+        self.val_f1 = MulticlassF1Score(num_classes=num_classes, average="macro")
+
+        # After training, we will compute a confusion matrix
+        self.confusion_matrix = []
+
+        # Dummy param tracks the device the model is using
+        self.dummy_param = nn.Parameter(torch.empty(0))
+
+        # Create a feature bank history which contains the feature bank of each epoch
+        self.feature_bank_history = []
+
+        # `*_epoch_end` hooks were removed; you'll need to manually store outputs of `on_*_epoch_end`
+        self.all_preds = []
+        self.all_targets = []
+
+    # Previously, we used the `training_epoch_end` hook to update the feature bank
+    def on_validation_epoch_start(self):
+        # Note that we don't need to use self.eval() or torch.no_grad() here
+        # Lightning uses on_validation_model_eval() and on_validation_model_train()
+        self.feature_bank = []
+        self.targets_bank = []
+        for data in self.dataloader_kNN:
+            img, target, _ = data
+            img = img.to(self.dummy_param.device)
+            target = target.to(self.dummy_param.device)
+            feature = self.backbone(img).squeeze()
+            feature = F.normalize(feature, dim=1)
+            self.feature_bank.append(feature)
+            self.targets_bank.append(target)
+        self.feature_bank = torch.cat(self.feature_bank, dim=0).t().contiguous()
+        self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
+
+        # At every epoch, also keep a historical record of the feature_bank
+        self.feature_bank_history.append(self.feature_bank.t().detach().cpu().numpy())
+
+    # We'll need to manually store the outputs of the validation step to our lists
+    def validation_step(self, batch, batch_idx):
+        images, targets, _ = batch
+        feature = self.backbone(images).squeeze()
+        feature = F.normalize(feature, dim=1)
+        pred_labels = knn_predict(
+            feature,
+            self.feature_bank,
+            self.targets_bank,
+            self.num_classes,
+            self.knn_k,
+            self.knn_t,
+        )
+        preds = pred_labels[:, 0]
+        self.all_preds.append(preds)
+        self.all_targets.append(targets)
+
+    # Previously, we used `validation_epoch_end(self, outputs)` to compute the metrics
+    def on_validation_epoch_end(self):
+        # Concatenate all predictions and targets
+        all_preds = torch.cat(self.all_preds, dim=0)
+        all_targets = torch.cat(self.all_targets, dim=0)
+
+        # Update metrics
+        self.val_accuracy(all_preds, all_targets)
+        self.val_f1(all_preds, all_targets)
+
+        # Update maxima
+        if self.val_accuracy.compute().item() > self.max_accuracy:
+            self.max_accuracy = self.val_accuracy.compute().item()
+        if self.val_f1.compute().item() > self.max_f1:
+            self.max_f1 = self.val_f1.compute().item()
+
+        # Log metrics
+        self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
+        self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)
+
+        # log confusion matrix: https://stackoverflow.com/a/73388839
+        confusion_matrix = MulticlassConfusionMatrix(
+            num_classes=self.num_classes, normalize="true"
+        ).to(all_preds.device)
+        confusion_matrix(all_preds, all_targets)
+
+        computed_confusion_matrix = confusion_matrix.compute().detach().cpu().numpy()
+        self.confusion_matrix.append(computed_confusion_matrix)
+
+        # Once we're done with the validation epoch, remember to clear the predictions and targets!
+        self.all_preds.clear()
+        self.all_targets.clear()
+
+    def predict_step(self, batch, batch_idx):
+        images, _, _ = batch
+        return self.backbone(images)

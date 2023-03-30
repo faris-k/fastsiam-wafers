@@ -7,6 +7,9 @@ scripts/lightning_logs
 imagenette.ipynb
 fastsiam_convnext.ipynb
 **bruh**
+MAE_preds.csv
+MSN_preds.csv
+mini-mnist-1000.pickle
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

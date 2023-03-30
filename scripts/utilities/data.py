@@ -15,6 +15,7 @@ from torchvision.transforms.functional import InterpolationMode
 # TODO: Migrate to albumentations instead of torchvision to use OneOf
 # colab: https://colab.research.google.com/github/albumentations-team/albumentations_examples/blob/colab/pytorch_classification.ipynb
 
+
 # NEW VERSION 🚀
 class DieNoise:
     """Adds noise to wafermap die by flipping pass to fail and vice-versa with probability p.
@@ -63,7 +64,6 @@ class RandomOneOf:
         weights: List[float] = None,
         p: float = 1.0,
     ):
-
         if weights:
             if len(transforms) != len(weights):
                 raise ValueError(
@@ -126,7 +126,6 @@ class DPWTransform:
         beta: float = 1.5,
         p: float = 5.0,
     ):
-
         self.domain_lower = domain_lower
         self.domain_upper = domain_upper
         self.out_lower = out_lower
@@ -389,7 +388,6 @@ class WaferImageCollateFunction(BaseCollateFunction):
         rr_prob2: float = 0.25,
         normalize: bool = True,
     ):
-
         transforms = get_base_transforms(
             img_size=img_size,
             die_noise_prob=die_noise_prob,
@@ -432,7 +430,6 @@ class WaferFastSiamCollateFunction(MultiViewCollateFunction):
         rr_prob2: float = 0.25,
         normalize: bool = True,
     ):
-
         transforms = get_base_transforms(
             img_size=img_size,
             die_noise_prob=die_noise_prob,
@@ -588,7 +585,6 @@ class WaferMSNCollateFunction(MultiViewCollateFunction):
         vf_prob: float = 0.0,
         rr_prob2: float = 0.25,
     ) -> None:
-
         base_transform = get_base_transforms(
             img_size=[random_size, random_size],
             die_noise_prob=die_noise_prob,
@@ -663,7 +659,7 @@ class WaferMAECollateFunction(MultiViewCollateFunction):
             T.RandomHorizontalFlip(hf_prob),
             T.Grayscale(num_output_channels=3),
             T.ToTensor(),
-            # T.Normalize(*normalization_stats),
+            T.Normalize(*normalization_stats),
         ]
 
         super().__init__([T.Compose(transforms)])
@@ -687,7 +683,6 @@ class WaferMAECollateFunction2(MultiViewCollateFunction):
         rr_prob2: float = 0.25,
         normalize: bool = True,
     ):
-
         transforms = get_base_transforms(
             img_size=img_size,
             die_noise_prob=die_noise_prob,
@@ -732,7 +727,6 @@ class WaferMultiCropCollateFunction(MultiViewCollateFunction):
         crop_max_scales: List[float],
         transforms: T.Compose,
     ):
-
         if len(crop_sizes) != len(crop_counts):
             raise ValueError(
                 "Length of crop_sizes and crop_counts must be equal but are"
@@ -751,7 +745,6 @@ class WaferMultiCropCollateFunction(MultiViewCollateFunction):
 
         crop_transforms = []
         for i in range(len(crop_sizes)):
-
             random_resized_crop = T.RandomResizedCrop(
                 crop_sizes[i],
                 scale=(crop_min_scales[i], crop_max_scales[i]),
@@ -811,7 +804,6 @@ class WaferSwaVCollateFunction(WaferMultiCropCollateFunction):
         rr_prob2: float = 0.25,
         normalize: bool = True,
     ):
-
         transforms = get_base_transforms(
             img_size=[crop_sizes[0], crop_sizes[0]],
             die_noise_prob=die_noise_prob,
@@ -845,7 +837,7 @@ class WaferMapDataset(Dataset):
     """
 
     def __init__(self, X, y, transform=None):
-        self.data = pd.concat([X, y], axis="columns")
+        # self.data = pd.concat([X, y], axis="columns")
         # All resizing is done in augmentations, so we have tensors/arrays of different sizes
         # Because of this, just create a list of tensors
         self.X_list = [torch.tensor(ndarray) for ndarray in X]
