@@ -98,6 +98,7 @@ from utilities.data import *
 torch.set_float32_matmul_precision("high")
 
 # suppress annoying torchmetrics and lightning warnings
+warnings.filterwarnings("ignore", ".*many workers.*")
 warnings.filterwarnings("ignore", ".*meaningless.*")
 warnings.filterwarnings("ignore", ".*confusion.*")
 
@@ -221,9 +222,9 @@ def get_data_loaders(batch_size: int, model):
         col_fn = msn_collate_fn
     elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
         col_fn = fastsiam_collate_fn
-    elif model == MAEModel:
+    elif model == MAEModel or model == SimMIMModel:
         col_fn = mae_collate_fn
-    elif model == MAE2Model or model == SimMIMModel:
+    elif model == MAE2Model:
         col_fn = mae2_collate_fn
     elif model == SwaVModel:
         col_fn = swav_collate_fn
