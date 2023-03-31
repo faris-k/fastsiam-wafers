@@ -1432,7 +1432,7 @@ def main():
                 strategy=strategy,
                 sync_batchnorm=sync_batchnorm,
                 logger=logger,
-                callbacks=[checkpoint_callback],
+                callbacks=[checkpoint_callback, RichProgressBar()],
                 enable_progress_bar=True,
                 precision="16-mixed" if use_amp else "32-true",
             )
