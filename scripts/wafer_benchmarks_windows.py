@@ -59,6 +59,8 @@ larger dataset, using train_split and val_data
 | SimCLR        |         64 |    150 |     11.5M |              0.678 |            0.698 |  208.3 Min |      1.7 GByte |
 | Moco          |         64 |    150 |     12.5M |              0.659 |            0.677 |  263.3 Min |      2.1 GByte |
 | VICReg        |         64 |    150 |     20.6M |              0.673 |            0.694 |  252.2 Min |      1.9 GByte |
+| PMSN          |         64 |    150 |     27.8M |              0.674 |            0.689 |  664.8 Min |      7.3 GByte |
+| DCLW          |         64 |    150 |     11.5M |              0.687 |            0.707 |  216.9 Min |      1.7 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 """
 
@@ -668,125 +670,6 @@ class DINOModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class DINOConvNeXtModel(KNNBenchmarkModule2):
-    def __init__(self, dataloader_kNN, num_classes, **kwargs):
-        super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "convnextv2_nano", num_classes=0, pretrained=False
-        )
-        feature_dim = timm.create_model("convnextv2_nano").get_classifier().in_features
-
-        self.head = heads.DINOProjectionHead(
-            feature_dim, 2048, 256, 2048, batch_norm=True
-        )
-        self.teacher_backbone = copy.deepcopy(self.backbone)
-        self.teacher_head = heads.DINOProjectionHead(
-            feature_dim, 2048, 256, 2048, batch_norm=True
-        )
-
-        utils.deactivate_requires_grad(self.teacher_backbone)
-        utils.deactivate_requires_grad(self.teacher_head)
-
-        self.criterion = lightly.loss.DINOLoss(output_dim=2048)
-
-    def forward(self, x):
-        y = self.backbone(x).flatten(start_dim=1)
-        z = self.head(y)
-        self.log("rep_std", debug.std_of_l2_normalized(y))
-        return z
-
-    def forward_teacher(self, x):
-        y = self.teacher_backbone(x).flatten(start_dim=1)
-        z = self.teacher_head(y)
-        return z
-
-    def training_step(self, batch, batch_idx):
-        utils.update_momentum(self.backbone, self.teacher_backbone, m=0.99)
-        utils.update_momentum(self.head, self.teacher_head, m=0.99)
-        views, _, _ = batch
-        views = [view.to(self.device) for view in views]
-        global_views = views[:2]
-        teacher_out = [self.forward_teacher(view) for view in global_views]
-        student_out = [self.forward(view) for view in views]
-        loss = self.criterion(teacher_out, student_out, epoch=self.current_epoch)
-        self.log("train_loss_ssl", loss)
-        return loss
-
-    def configure_optimizers(self):
-        param = list(self.backbone.parameters()) + list(self.head.parameters())
-        optim = torch.optim.SGD(
-            param,
-            lr=6e-2 * lr_factor,
-            momentum=0.9,
-            weight_decay=5e-4,
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
-        return [optim], [scheduler]
-
-
-class DINOXCiTModel(KNNBenchmarkModule2):
-    def __init__(self, dataloader_kNN, num_classes, **kwargs):
-        super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model(
-            "xcit_tiny_12_p16_224", num_classes=0, pretrained=False
-        )
-        feature_dim = (
-            timm.create_model("xcit_tiny_12_p16_224").get_classifier().in_features
-        )
-        # xcit_small leads to OOM
-        # self.backbone = torch.hub.load(
-        #     "facebookresearch/dino:main", "dino_xcit_small_12_p16", pretrained=False
-        # )
-        # feature_dim = self.backbone.embed_dim
-
-        self.head = heads.DINOProjectionHead(
-            feature_dim, 2048, 256, 2048, batch_norm=True
-        )
-        self.teacher_backbone = copy.deepcopy(self.backbone)
-        self.teacher_head = heads.DINOProjectionHead(
-            feature_dim, 2048, 256, 2048, batch_norm=True
-        )
-
-        utils.deactivate_requires_grad(self.teacher_backbone)
-        utils.deactivate_requires_grad(self.teacher_head)
-
-        self.criterion = lightly.loss.DINOLoss(output_dim=2048)
-
-    def forward(self, x):
-        y = self.backbone(x).flatten(start_dim=1)
-        z = self.head(y)
-        self.log("rep_std", debug.std_of_l2_normalized(y))
-        return z
-
-    def forward_teacher(self, x):
-        y = self.teacher_backbone(x).flatten(start_dim=1)
-        z = self.teacher_head(y)
-        return z
-
-    def training_step(self, batch, batch_idx):
-        utils.update_momentum(self.backbone, self.teacher_backbone, m=0.99)
-        utils.update_momentum(self.head, self.teacher_head, m=0.99)
-        views, _, _ = batch
-        views = [view.to(self.device) for view in views]
-        global_views = views[:2]
-        teacher_out = [self.forward_teacher(view) for view in global_views]
-        student_out = [self.forward(view) for view in views]
-        loss = self.criterion(teacher_out, student_out, epoch=self.current_epoch)
-        self.log("train_loss_ssl", loss)
-        return loss
-
-    def configure_optimizers(self):
-        param = list(self.backbone.parameters()) + list(self.head.parameters())
-        optim = torch.optim.SGD(
-            param,
-            lr=6e-2 * lr_factor,
-            momentum=0.9,
-            weight_decay=5e-4,
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
-        return [optim], [scheduler]
-
-
 class DINOViTModel(KNNBenchmarkModule2):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
@@ -834,8 +717,9 @@ class DINOViTModel(KNNBenchmarkModule2):
 
     # Trying out AdamW; authors recommend using this with ViT
     def configure_optimizers(self):
+        param = list(self.backbone.parameters()) + list(self.head.parameters())
         optim = torch.optim.AdamW(
-            self.parameters(),
+            param,
             lr=1.5e-4 * lr_factor,
             weight_decay=0.05,
             betas=(0.9, 0.95),
@@ -1259,7 +1143,7 @@ class SwaVModel(KNNBenchmarkModule2):
         feature_dim = self.backbone.num_features
 
         self.projection_head = heads.SwaVProjectionHead(feature_dim, 2048, 128)
-        self.prototypes = heads.SwaVPrototypes(128, 512)  # use 512 prototypes
+        self.prototypes = heads.SwaVPrototypes(128, 3000)  # use 3000 prototypes
 
         self.criterion = lightly.loss.SwaVLoss(
             sinkhorn_gather_distributed=gather_distributed
@@ -1369,22 +1253,22 @@ class VICRegModel(KNNBenchmarkModule2):
 
 def main():
     models = [
-        PMSNModel,
+        DINOViTModel,
+        # PMSNModel,
         # MAE2Model,
-        DCLW,
+        # DCLW,
         # SupervisedR18,
         # MAEModel,
         # SimCLRModel,
         # FastSiamSymmetrizedModel,
         # MocoModel,
-        # BarlowTwinsModel,
+        BarlowTwinsModel,
         # SimSiamModel,
         # VICRegModel,
         # SwaVModel,
         # SimMIMModel,
         # DINOModel,
         # MSNModel,
-        # DINOViTModel,
     ]
     bench_results = dict()
 
