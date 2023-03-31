@@ -54,6 +54,12 @@ larger dataset, using train_split and val_data
 | SimCLR        |         64 |    200 |     11.5M |              0.679 |            0.703 |  282.2 Min |      1.7 GByte |
 | BarlowTwins   |         64 |    106 |     20.6M |              0.688 |            0.702 |  393.2 Min |      2.0 GByte |
 -------------------------------------------------------------------------------------------------------------------------
+| SimCLR        |         64 |    100 |     11.5M |              0.681 |            0.700 |  139.0 Min |      1.7 GByte |
+-------------------------------------------------------------------------------------------------------------------------
+| SimCLR        |         64 |    150 |     11.5M |              0.678 |            0.698 |  208.3 Min |      1.7 GByte |
+| Moco          |         64 |    150 |     12.5M |              0.659 |            0.677 |  263.3 Min |      2.1 GByte |
+| VICReg        |         64 |    150 |     20.6M |              0.673 |            0.694 |  252.2 Min |      1.9 GByte |
+-------------------------------------------------------------------------------------------------------------------------
 """
 
 import os
@@ -82,7 +88,6 @@ from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.model_selection import train_test_split
 from timm.optim.lars import Lars
-from torch import multiprocessing
 from torch.utils.data import DataLoader
 from utilities.benchmarking import KNNBenchmarkModule, KNNBenchmarkModule2
 from utilities.data import *
@@ -91,10 +96,7 @@ from utilities.data import *
 torch.set_float32_matmul_precision("high")
 
 # suppress annoying torchmetrics and lightning warnings
-warnings.filterwarnings("ignore", ".*has Tensor cores.*")
-warnings.filterwarnings("ignore", ".*does not have many workers.*")
 warnings.filterwarnings("ignore", ".*meaningless.*")
-warnings.filterwarnings("ignore", ".*log_every_n_steps.*")
 warnings.filterwarnings("ignore", ".*confusion.*")
 
 logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
@@ -102,9 +104,9 @@ logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
 num_workers = 2  # os.cpu_count()
 memory_bank_size = 4096
 
-# set max_epochs to 800 for long run (takes around 10h on a single V100)
-max_epochs = 100
-knn_k = 25  # y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
+subset = False  # Whether to benchmark using a subset of the dataset
+max_epochs = 200 if subset else 150
+knn_k = 25  # subset y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
 knn_t = 0.1
 classes = 9
 input_size = 224
@@ -121,16 +123,15 @@ use_amp = True
 
 # Set to True to gather features from all gpus before calculating
 # the loss (requires distributed=True).
-#  If enabled then the loss on every gpu is calculated with features from all
+# If enabled then the loss on every gpu is calculated with features from all
 # gpus, otherwise only features from the same gpu are used.
 gather_distributed = False
 
-# benchmark
 n_runs = 1  # optional, increase to create multiple runs and report mean + std
 batch_size = 64
 lr_factor = batch_size / 256  #  scales the learning rate linearly with batch size
 
-# use a GPU if available
+# Use a GPU if available
 devices = torch.cuda.device_count() if torch.cuda.is_available() else 1
 accelerator = "gpu" if torch.cuda.is_available() else "cpu"
 
@@ -143,19 +144,24 @@ else:
     # limit to single gpu if not using distributed training
     devices = min(devices, 1)
 
-# # Create a smaller dataset for benchmarking using one of the training splits
-# df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
-# X_train, X_val, y_train, y_val = train_test_split(
-#     df.waferMap, df.failureCode, test_size=0.2, random_state=42, stratify=df.failureCode
-# )
-# del df
-
-# Or, use the larger train/val splits
-df_train = pd.read_pickle("../data/cleaned_splits/train_split.pkl")
-df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
-X_train, y_train = df_train.waferMap, df_train.failureCode
-X_val, y_val = df_val.waferMap, df_val.failureCode
-del df_train, df_val
+if subset:
+    # Create a smaller dataset for benchmarking using one of the training splits
+    df = pd.read_pickle("../data/cleaned_splits/train_20_split.pkl")
+    X_train, X_val, y_train, y_val = train_test_split(
+        df.waferMap,
+        df.failureCode,
+        test_size=0.2,
+        random_state=42,
+        stratify=df.failureCode,
+    )
+    del df
+else:
+    # Otherwise, use the larger train/val splits
+    df_train = pd.read_pickle("../data/cleaned_splits/train_split.pkl")
+    df_val = pd.read_pickle("../data/cleaned_splits/val_data.pkl")
+    X_train, y_train = df_train.waferMap, df_train.failureCode
+    X_val, y_val = df_val.waferMap, df_val.failureCode
+    del df_train, df_val
 
 # SSL training will have no transforms passed to the dataset object; this is handled by collate function
 dataset_train_ssl = LightlyDataset.from_torch_dataset(WaferMapDataset(X_train, y_train))
@@ -171,7 +177,7 @@ dataset_test = LightlyDataset.from_torch_dataset(
 # For supervised baseline, pass base transforms since no collate function will be used
 dataset_train_supervised = LightlyDataset.from_torch_dataset(
     WaferMapDataset(X_train, y_train),
-    transform=get_base_transforms(img_size=[224, 224]),
+    transform=get_base_transforms(img_size=[input_size, input_size]),
 )
 
 # Base collate function for basic joint embedding frameworks
@@ -191,9 +197,9 @@ msn_collate_fn = WaferMSNCollateFunction(
     random_size=input_size, focal_size=input_size // 2
 )
 
-mae_collate_fn = WaferMAECollateFunction([224, 224], 0.0, 0.0)
+mae_collate_fn = WaferMAECollateFunction()
 
-mae2_collate_fn = WaferMAECollateFunction2([224, 224])
+mae2_collate_fn = WaferMAECollateFunction2()
 
 swav_collate_fn = WaferSwaVCollateFunction(crop_sizes=[input_size, input_size // 2])
 
@@ -303,7 +309,6 @@ class MocoModel(KNNBenchmarkModule2):
 
     def forward(self, x):
         x = self.backbone(x).flatten(start_dim=1)
-        self.log("rep_std", debug.std_of_l2_normalized(x))
         return self.projection_head(x)
 
     def training_step(self, batch, batch_idx):
@@ -316,6 +321,7 @@ class MocoModel(KNNBenchmarkModule2):
         def step(x0_, x1_):
             x1_, shuffle = utils.batch_shuffle(x1_, distributed=distributed)
             x0_ = self.backbone(x0_).flatten(start_dim=1)
+            self.log("rep_std", debug.std_of_l2_normalized(x0_))
             x0_ = self.projection_head(x0_)
 
             x1_ = self.backbone_momentum(x1_).flatten(start_dim=1)
@@ -1363,17 +1369,17 @@ class VICRegModel(KNNBenchmarkModule2):
 
 def main():
     models = [
-        # PMSNModel,
+        PMSNModel,
         # MAE2Model,
-        # DCLW,
+        DCLW,
         # SupervisedR18,
         # MAEModel,
-        SimCLRModel,
+        # SimCLRModel,
         # FastSiamSymmetrizedModel,
-        MocoModel,
+        # MocoModel,
         # BarlowTwinsModel,
         # SimSiamModel,
-        VICRegModel,
+        # VICRegModel,
         # SwaVModel,
         # SimMIMModel,
         # DINOModel,
@@ -1397,7 +1403,9 @@ def main():
                 batch_size=batch_size,
                 model=BenchmarkModel,
             )
-            benchmark_model = BenchmarkModel(dataloader_train_kNN, classes, knn_k=knn_k)
+            benchmark_model = BenchmarkModel(
+                dataloader_train_kNN, classes, knn_k=knn_k, knn_t=knn_t
+            )
 
             # Save logs to: {CWD}/benchmark_logs/wafermaps/{experiment_version}/{model_name}/
             # If multiple runs are specified a subdirectory for each run is created.
@@ -1413,7 +1421,7 @@ def main():
                 experiment_version = logger.version
             checkpoint_callback = pl.callbacks.ModelCheckpoint(
                 dirpath=os.path.join(logger.log_dir, "checkpoints"),
-                every_n_epochs=max_epochs // 20,
+                every_n_epochs=max_epochs // 10,
             )
 
             trainer = pl.Trainer(
@@ -1453,12 +1461,12 @@ def main():
             print(run)
 
             # Save feature bank and confusion matrix to compressed npz file
-            stacked_history = np.stack(benchmark_model.feature_bank_history)
+            # stacked_history = np.stack(benchmark_model.feature_bank_history)
             stacked_cm = np.stack(benchmark_model.confusion_matrix)
-            np.savez_compressed(
-                os.path.join(logger.log_dir, "feature_bank.npz"),
-                feature_bank=stacked_history,
-            )
+            # np.savez_compressed(
+            #     os.path.join(logger.log_dir, "feature_bank.npz"),
+            #     feature_bank=stacked_history,
+            # )
             np.savez_compressed(
                 os.path.join(logger.log_dir, "confusion_matrix.npz"),
                 confusion_matrix=stacked_cm,
@@ -1470,7 +1478,7 @@ def main():
             )
 
             # delete model and trainer + free up cuda memory
-            del benchmark_model, trainer, stacked_history, stacked_cm
+            del benchmark_model, trainer, stacked_cm  # , stacked_history
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.empty_cache()
 

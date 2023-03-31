@@ -253,7 +253,7 @@ class KNNBenchmarkModule2(pl.LightningModule):
         self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
 
         # At every epoch, also keep a historical record of the feature_bank
-        self.feature_bank_history.append(self.feature_bank.t().detach().cpu().numpy())
+        # self.feature_bank_history.append(self.feature_bank.t().detach().cpu().numpy())
 
     # We'll need to manually store the outputs of the validation step to our lists
     def validation_step(self, batch, batch_idx):
