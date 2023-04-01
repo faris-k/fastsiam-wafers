@@ -61,6 +61,7 @@ larger dataset, using train_split and val_data
 | VICReg        |         64 |    150 |     20.6M |              0.673 |            0.694 |  252.2 Min |      1.9 GByte |
 | PMSN          |         64 |    150 |     27.8M |              0.674 |            0.689 |  664.8 Min |      7.3 GByte |
 | DCLW          |         64 |    150 |     11.5M |              0.687 |            0.707 |  216.9 Min |      1.7 GByte |
+| DINOViT       |         64 |    150 |     27.7M |              0.620 |            0.627 | 1173.1 Min |     10.2 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 """
 
@@ -1254,20 +1255,20 @@ class VICRegModel(KNNBenchmarkModule2):
 
 def main():
     models = [
-        DINOViTModel,
+        # DINOViTModel,
         # PMSNModel,
         # MAE2Model,
         # DCLW,
         # SupervisedR18,
-        # MAEModel,
+        MAEModel,
         # SimCLRModel,
-        # FastSiamSymmetrizedModel,
+        FastSiamSymmetrizedModel,
         # MocoModel,
         BarlowTwinsModel,
-        # SimSiamModel,
+        SimSiamModel,
         # VICRegModel,
-        # SwaVModel,
-        # SimMIMModel,
+        SwaVModel,
+        SimMIMModel,
         # DINOModel,
         # MSNModel,
     ]
