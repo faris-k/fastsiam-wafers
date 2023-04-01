@@ -1269,7 +1269,7 @@ def main():
         # VICRegModel,
         SwaVModel,
         SimMIMModel,
-        # DINOModel,
+        DINOModel,
         # MSNModel,
     ]
     bench_results = dict()
