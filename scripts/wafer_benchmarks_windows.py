@@ -62,6 +62,7 @@ larger dataset, using train_split and val_data
 | PMSN          |         64 |    150 |     27.8M |              0.674 |            0.689 |  664.8 Min |      7.3 GByte |
 | DCLW          |         64 |    150 |     11.5M |              0.687 |            0.707 |  216.9 Min |      1.7 GByte |
 | DINOViT       |         64 |    150 |     27.7M |              0.620 |            0.627 | 1173.1 Min |     10.2 GByte |
+| SimMIM        |         64 |    150 |     90.6M |              0.511 |            0.520 |  251.1 Min |      3.0 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 """
 
@@ -1260,6 +1261,7 @@ def main():
         # MAE2Model,
         # DCLW,
         # SupervisedR18,
+        # SimMIMModel,
         MAEModel,
         # SimCLRModel,
         FastSiamSymmetrizedModel,
@@ -1268,9 +1270,8 @@ def main():
         SimSiamModel,
         # VICRegModel,
         SwaVModel,
-        SimMIMModel,
         DINOModel,
-        # MSNModel,
+        MSNModel,
     ]
     bench_results = dict()
 
