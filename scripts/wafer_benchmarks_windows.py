@@ -63,6 +63,7 @@ larger dataset, using train_split and val_data
 | DCLW          |         64 |    150 |     11.5M |              0.687 |            0.707 |  216.9 Min |      1.7 GByte |
 | DINOViT       |         64 |    150 |     27.7M |              0.620 |            0.627 | 1173.1 Min |     10.2 GByte |
 | SimMIM        |         64 |    150 |     90.6M |              0.511 |            0.520 |  251.1 Min |      3.0 GByte |
+| MAE           |         64 |    150 |     93.4M |              0.677 |            0.693 |  208.0 Min |      2.3 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 """
 
@@ -222,7 +223,7 @@ def get_data_loaders(batch_size: int, model):
         col_fn = dino_collate_fn
     elif model == MSNModel or model == PMSNModel:
         col_fn = msn_collate_fn
-    elif model == FastSiamModel or model == FastSiamSymmetrizedModel:
+    elif model == FastSiamModel:
         col_fn = fastsiam_collate_fn
     elif model == MAEModel or model == SimMIMModel:
         col_fn = mae_collate_fn
@@ -427,55 +428,6 @@ class SimSiamModel(KNNBenchmarkModule2):
 
 
 class FastSiamModel(KNNBenchmarkModule2):
-    def __init__(self, dataloader_kNN, num_classes, **kwargs):
-        super().__init__(dataloader_kNN, num_classes, **kwargs)
-        self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=False)
-        feature_dim = self.backbone.num_features
-        self.projection_head = heads.SimSiamProjectionHead(feature_dim, 2048, 2048)
-        self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
-        self.criterion = lightly.loss.NegativeCosineSimilarity()
-
-    def forward(self, x):
-        f = self.backbone(x).flatten(start_dim=1)
-        z = self.projection_head(f)
-        p = self.prediction_head(z)
-        z = z.detach()
-        self.log("rep_std", debug.std_of_l2_normalized(f))
-        return z, p
-
-    def training_step(self, batch, batch_idx):
-        # Unpack augmented views
-        views, _, _ = batch
-        x1, x2, x3, x4 = views
-
-        # Pass each view through projector to get z, and predictor to get p
-        z1, p1 = self.forward(x1)
-        z2, p2 = self.forward(x2)
-        z3, p3 = self.forward(x3)
-        z4, p4 = self.forward(x4)
-
-        # Use mean of the last N - 1 projected views
-        mean = (z2 + z3 + z4) / 3
-
-        # Compute loss using prediction of 1st view, mean of remaining projected views
-        loss = self.criterion(p1, mean)
-
-        # Keep a log of the loss
-        self.log("train_loss_ssl", loss)
-        return loss
-
-    def configure_optimizers(self):
-        optim = torch.optim.SGD(
-            self.parameters(),
-            lr=6e-2,  #  no lr-scaling, results in better training stability
-            momentum=0.9,
-            weight_decay=5e-4,
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
-        return [optim], [scheduler]
-
-
-class FastSiamSymmetrizedModel(KNNBenchmarkModule2):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=False)
@@ -1262,12 +1214,13 @@ def main():
         # DCLW,
         # SupervisedR18,
         # SimMIMModel,
-        MAEModel,
+        # MAEModel,
         # SimCLRModel,
-        FastSiamSymmetrizedModel,
-        # MocoModel,
+        BYOLModel,
         BarlowTwinsModel,
+        # MocoModel,
         SimSiamModel,
+        FastSiamModel,
         # VICRegModel,
         SwaVModel,
         DINOModel,

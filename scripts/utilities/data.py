@@ -253,7 +253,7 @@ class DPWTransform:
         new_fail_coords = (fail_coords * torch.tensor([new_h, new_w])).long()
 
         # Create a tensor for storing transformed data with shape (new_h,new_w)
-        new_wafer = torch.zeros((new_h, new_w))
+        new_wafer = torch.zeros((new_h, new_w), dtype=torch.uint8)
 
         # Set values for passing and failing elements in transformed tensor
         new_wafer[new_pass_coords[:, 0], new_pass_coords[:, 1]] = 128
