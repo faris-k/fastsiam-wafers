@@ -92,16 +92,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+import wandb
 from lightly.data import LightlyDataset
 from lightly.models import utils
 from lightly.models.modules import heads, masked_autoencoder
 from lightly.utils import debug, scheduler
 from pytorch_lightning.callbacks import RichProgressBar
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from sklearn.model_selection import train_test_split
 from timm.optim.lars import Lars
 from torch.utils.data import DataLoader
-from utilities.benchmarking import KNNBenchmarkModule, KNNBenchmarkModule2
+from utilities.benchmarking import KNNBenchmarkModule, WandBKNNBenchmarkModule
 from utilities.data import *
 
 # torch.set_num_threads(os.cpu_count())
@@ -117,8 +118,8 @@ logs_root_dir = os.path.join(os.getcwd(), "benchmark_logs")
 num_workers = 2  # os.cpu_count()
 memory_bank_size = 4096
 
-subset = False  # Whether to benchmark using a subset of the dataset
-max_epochs = 200 if subset else 150
+subset = True  # Whether to benchmark using a subset of the dataset
+max_epochs = 2 if subset else 150
 knn_k = 5  # sweep of knn_k values leads to best performance at k=5
 knn_t = 0.1
 classes = 9
@@ -275,7 +276,7 @@ def get_data_loaders(batch_size: int, model):
     return dataloader_train_ssl, dataloader_train_kNN, dataloader_test
 
 
-class SupervisedR18(KNNBenchmarkModule2):
+class SupervisedR18(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=False)
@@ -299,7 +300,7 @@ class SupervisedR18(KNNBenchmarkModule2):
         return optim
 
 
-class MocoModel(KNNBenchmarkModule2):
+class MocoModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -365,7 +366,7 @@ class MocoModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class SimCLRModel(KNNBenchmarkModule2):
+class SimCLRModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -396,7 +397,7 @@ class SimCLRModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class SimSiamModel(KNNBenchmarkModule2):
+class SimSiamModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -434,7 +435,7 @@ class SimSiamModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class FastSiamModel(KNNBenchmarkModule2):
+class FastSiamModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=False)
@@ -479,7 +480,7 @@ class FastSiamModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class BarlowTwinsModel(KNNBenchmarkModule2):
+class BarlowTwinsModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -516,7 +517,7 @@ class BarlowTwinsModel(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class BYOLModel(KNNBenchmarkModule2):
+class BYOLModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -578,7 +579,7 @@ class BYOLModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class DINOModel(KNNBenchmarkModule2):
+class DINOModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = timm.create_model("resnet18", num_classes=0, pretrained=False)
@@ -632,7 +633,7 @@ class DINOModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class DINOViTModel(KNNBenchmarkModule2):
+class DINOViTModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         self.backbone = torch.hub.load(
@@ -704,7 +705,7 @@ class DINOViTModel(KNNBenchmarkModule2):
     #     return [optim], [scheduler]
 
 
-class MAEModel(KNNBenchmarkModule2):
+class MAEModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -786,7 +787,7 @@ class MAEModel(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class MAE2Model(KNNBenchmarkModule2):
+class MAE2Model(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -868,7 +869,7 @@ class MAE2Model(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class SimMIMModel(KNNBenchmarkModule2):
+class SimMIMModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -939,7 +940,7 @@ class SimMIMModel(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class MSNModel(KNNBenchmarkModule2):
+class MSNModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -1019,7 +1020,7 @@ class MSNModel(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class PMSNModel(KNNBenchmarkModule2):
+class PMSNModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
 
@@ -1099,7 +1100,7 @@ class PMSNModel(KNNBenchmarkModule2):
         return [optim], [cosine_scheduler]
 
 
-class SwaVModel(KNNBenchmarkModule2):
+class SwaVModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -1150,7 +1151,7 @@ class SwaVModel(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class DCLW(KNNBenchmarkModule2):
+class DCLW(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -1181,7 +1182,7 @@ class DCLW(KNNBenchmarkModule2):
         return [optim], [scheduler]
 
 
-class VICRegModel(KNNBenchmarkModule2):
+class VICRegModel(WandBKNNBenchmarkModule):
     def __init__(self, dataloader_kNN, num_classes, **kwargs):
         super().__init__(dataloader_kNN, num_classes, **kwargs)
         # create a ResNet backbone and remove the classification head
@@ -1220,20 +1221,20 @@ def main():
         # DINOViTModel,
         # PMSNModel,
         # MAE2Model,
-        # DCLW,
+        DCLW,
         # SupervisedR18,
         # SimMIMModel,
-        # MAEModel,
-        # SimCLRModel,
+        MAEModel,
+        SimCLRModel,
         # MocoModel,
         # VICRegModel,
-        BYOLModel,
-        BarlowTwinsModel,
-        SimSiamModel,
-        FastSiamModel,
-        SwaVModel,
-        DINOModel,
-        MSNModel,
+        # BYOLModel,
+        # BarlowTwinsModel,
+        # SimSiamModel,
+        # FastSiamModel,
+        # SwaVModel,
+        # DINOModel,
+        # MSNModel,
     ]
     bench_results = dict()
 
@@ -1256,21 +1257,22 @@ def main():
                 dataloader_train_kNN, classes, knn_k=knn_k, knn_t=knn_t
             )
 
-            # Save logs to: {CWD}/benchmark_logs/wafermaps/{experiment_version}/{model_name}/
-            # If multiple runs are specified a subdirectory for each run is created.
-            sub_dir = model_name if n_runs <= 1 else f"{model_name}/run{seed}"
-            logger = TensorBoardLogger(
-                save_dir=os.path.join(logs_root_dir, "wafermaps"),
-                name="",
-                sub_dir=sub_dir,
+            # In Wandb, save under the wafermaps project such that this run is under model name
+            name = model_name if n_runs <= 1 else f"{model_name}/run{seed}"
+            logger = WandbLogger(
+                name=name,
+                project="wafermaps",
                 version=experiment_version,
+                save_dir=logs_root_dir,
+                log_model="all",
             )
+            logger.watch(benchmark_model)
             if experiment_version is None:
                 # Save results of all models under same version directory
                 experiment_version = logger.version
             checkpoint_callback = pl.callbacks.ModelCheckpoint(
-                dirpath=os.path.join(logger.log_dir, "checkpoints"),
-                every_n_epochs=max_epochs // 10,
+                # dirpath=os.path.join(logger.log_dir, "checkpoints"),
+                every_n_epochs=10,
             )
 
             trainer = pl.Trainer(
@@ -1281,7 +1283,7 @@ def main():
                 strategy=strategy,
                 sync_batchnorm=sync_batchnorm,
                 logger=logger,
-                callbacks=[checkpoint_callback],
+                # callbacks=[checkpoint_callback],
                 enable_progress_bar=True,
                 precision="16-mixed" if use_amp else "32-true",
             )
@@ -1311,27 +1313,26 @@ def main():
 
             # Save feature bank and confusion matrix to compressed npz file
             # stacked_history = np.stack(benchmark_model.feature_bank_history)
-            stacked_cm = np.stack(benchmark_model.confusion_matrix)
+            # stacked_cm = np.stack(benchmark_model.confusion_matrix)
             # np.savez_compressed(
-            #     os.path.join(logger.log_dir, "feature_bank.npz"),
-            #     feature_bank=stacked_history,
+            #     os.path.join(logger.log_dir, "confusion_matrix.npz"),
+            #     confusion_matrix=stacked_cm,
             # )
-            np.savez_compressed(
-                os.path.join(logger.log_dir, "confusion_matrix.npz"),
-                confusion_matrix=stacked_cm,
-            )
 
             # Save the results dictionary to file
-            pd.DataFrame(runs).to_csv(
-                os.path.join(logger.log_dir, "results.csv"), index=False
-            )
+            # pd.DataFrame(runs).to_csv(
+            #     os.path.join(logger.log_dir, "results.csv"), index=False
+            # )
+            # Save dataframe to wandb
+            wandb.log({"results": wandb.Table(dataframe=pd.DataFrame(runs))})
 
             # delete model and trainer + free up cuda memory
-            del benchmark_model, trainer, stacked_cm  # , stacked_history
+            del benchmark_model, trainer
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.empty_cache()
 
         bench_results[model_name] = runs
+        wandb.finish()
 
     #  print results table
     header = (

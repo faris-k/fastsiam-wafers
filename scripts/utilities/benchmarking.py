@@ -6,6 +6,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from lightly.utils.benchmarking import knn_predict
 from PIL import Image
 from torch.utils.data import DataLoader
@@ -292,7 +293,6 @@ class KNNBenchmarkModule2(pl.LightningModule):
         self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
         self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)
 
-        # log confusion matrix: https://stackoverflow.com/a/73388839
         confusion_matrix = MulticlassConfusionMatrix(
             num_classes=self.num_classes, normalize="true"
         ).to(all_preds.device)
@@ -300,6 +300,151 @@ class KNNBenchmarkModule2(pl.LightningModule):
 
         computed_confusion_matrix = confusion_matrix.compute().detach().cpu().numpy()
         self.confusion_matrix.append(computed_confusion_matrix)
+
+        # Once we're done with the validation epoch, remember to clear the predictions and targets!
+        self.all_preds.clear()
+        self.all_targets.clear()
+
+    def predict_step(self, batch, batch_idx):
+        images, _, _ = batch
+        return self.backbone(images)
+
+
+# modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
+# source is https://arxiv.org/abs/1805.01978
+class WandBKNNBenchmarkModule(pl.LightningModule):
+    """A PyTorch Lightning Module for automated kNN callback with support for torchmetrics.
+
+    Modified from https://github.com/lightly-ai/lightly/blob/master/lightly/utils/benchmarking.py
+    """
+
+    def __init__(
+        self,
+        dataloader_kNN: DataLoader,
+        num_classes: int,
+        knn_k: int = 5,  # TODO: find a good default value, 200 is too high for class imbalance
+        knn_t: float = 0.1,
+    ):
+        super().__init__()
+        self.backbone = nn.Module()
+        self.max_accuracy = 0.0
+        self.max_f1 = 0.0
+        self.dataloader_kNN = dataloader_kNN
+        self.num_classes = num_classes
+        self.knn_k = knn_k
+        self.knn_t = knn_t
+
+        # Initialize metrics for validation; imbalanced classes, so use macro average
+        self.val_accuracy = MulticlassAccuracy(num_classes=num_classes, average="macro")
+        self.val_f1 = MulticlassF1Score(num_classes=num_classes, average="macro")
+
+        # After training, we will compute a confusion matrix
+        self.confusion_matrix = []
+
+        # Dummy param tracks the device the model is using
+        self.dummy_param = nn.Parameter(torch.empty(0))
+
+        # Create a feature bank history which contains the feature bank of each epoch
+        self.feature_bank_history = []
+
+        # `*_epoch_end` hooks were removed; you'll need to manually store outputs of `on_*_epoch_end`
+        self.all_preds = []
+        self.all_targets = []
+
+    # Previously, we used the `training_epoch_end` hook to update the feature bank
+    def on_validation_epoch_start(self):
+        # Note that we don't need to use self.eval() or torch.no_grad() here
+        # Lightning uses on_validation_model_eval() and on_validation_model_train()
+        self.feature_bank = []
+        self.targets_bank = []
+        for data in self.dataloader_kNN:
+            img, target, _ = data
+            img = img.to(self.dummy_param.device)
+            target = target.to(self.dummy_param.device)
+            feature = self.backbone(img).squeeze()
+            feature = F.normalize(feature, dim=1)
+            self.feature_bank.append(feature)
+            self.targets_bank.append(target)
+        self.feature_bank = torch.cat(self.feature_bank, dim=0).t().contiguous()
+        self.targets_bank = torch.cat(self.targets_bank, dim=0).t().contiguous()
+
+        # At every epoch, also keep a historical record of the feature_bank
+        # self.feature_bank_history.append(self.feature_bank.t().detach().cpu().numpy())
+
+    # We'll need to manually store the outputs of the validation step to our lists
+    def validation_step(self, batch, batch_idx):
+        images, targets, _ = batch
+        feature = self.backbone(images).squeeze()
+        feature = F.normalize(feature, dim=1)
+        pred_labels = knn_predict(
+            feature,
+            self.feature_bank,
+            self.targets_bank,
+            self.num_classes,
+            self.knn_k,
+            self.knn_t,
+        )
+        preds = pred_labels[:, 0]
+        self.all_preds.append(preds)
+        self.all_targets.append(targets)
+
+    # Previously, we used `validation_epoch_end(self, outputs)` to compute the metrics
+    def on_validation_epoch_end(self):
+        # Concatenate all predictions and targets
+        all_preds = torch.cat(self.all_preds, dim=0)
+        all_targets = torch.cat(self.all_targets, dim=0)
+
+        # Update metrics
+        self.val_accuracy(all_preds, all_targets)
+        self.val_f1(all_preds, all_targets)
+
+        # Update maxima
+        if self.val_accuracy.compute().item() > self.max_accuracy:
+            self.max_accuracy = self.val_accuracy.compute().item()
+        if self.val_f1.compute().item() > self.max_f1:
+            self.max_f1 = self.val_f1.compute().item()
+
+        # Log metrics
+        self.log("knn_accuracy", self.val_accuracy, on_epoch=True, prog_bar=True)
+        self.log("knn_f1", self.val_f1, on_epoch=True, prog_bar=True)
+
+        # log confusion matrix to wandb
+        confusion_matrix = MulticlassConfusionMatrix(
+            num_classes=self.num_classes, normalize="true"
+        ).to(all_preds.device)
+        confusion_matrix(all_preds, all_targets)
+        computed_confusion_matrix = confusion_matrix.compute().detach().cpu().numpy()
+
+        labels = [
+            "Center",
+            "Donut",
+            "Edge-Loc",
+            "Edge-Ring",
+            "Loc",
+            "Near-full",
+            "Random",
+            "Scratch",
+            "None",
+        ]
+
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+        sns.heatmap(
+            computed_confusion_matrix,
+            annot=True,
+            cmap=sns.cubehelix_palette(start=0, light=0.97, as_cmap=True),
+            square=True,
+            linewidths=1,
+            fmt=".2f",
+            xticklabels=labels,
+            yticklabels=labels,
+            ax=ax,
+        )
+        plt.xticks(rotation=45)
+        plt.yticks(rotation=45)
+        ax.set_xlabel("True Label", fontsize=14)
+        ax.set_ylabel("Predicted Label", fontsize=14)
+        wandb.log({"confusion_matrix": wandb.Image(fig)})
+        plt.close(fig)
 
         # Once we're done with the validation epoch, remember to clear the predictions and targets!
         self.all_preds.clear()

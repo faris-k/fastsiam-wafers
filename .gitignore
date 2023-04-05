@@ -10,6 +10,9 @@ fastsiam_convnext.ipynb
 MAE_preds.csv
 MSN_preds.csv
 mini-mnist-1000.pickle
+# wandb logs and tmp folders
+artifacts
+wandb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
