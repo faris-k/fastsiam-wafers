@@ -206,7 +206,7 @@ class KNNBenchmarkModule2(pl.LightningModule):
         self,
         dataloader_kNN: DataLoader,
         num_classes: int,
-        knn_k: int = 25,  # TODO: find a good default value, 200 is too high for class imbalance
+        knn_k: int = 5,  # TODO: find a good default value, 200 is too high for class imbalance
         knn_t: float = 0.1,
     ):
         super().__init__()

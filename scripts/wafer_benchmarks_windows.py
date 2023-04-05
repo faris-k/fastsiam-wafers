@@ -64,6 +64,13 @@ larger dataset, using train_split and val_data
 | DINOViT       |         64 |    150 |     27.7M |              0.620 |            0.627 | 1173.1 Min |     10.2 GByte |
 | SimMIM        |         64 |    150 |     90.6M |              0.511 |            0.520 |  251.1 Min |      3.0 GByte |
 | MAE           |         64 |    150 |     93.4M |              0.677 |            0.693 |  208.0 Min |      2.3 GByte |
+| BYOL          |         64 |    150 |     16.4M |              0.727 |            0.751 |  257.6 Min |      2.1 GByte |
+| BarlowTwins   |         64 |    150 |     20.6M |              0.691 |            0.717 |  520.8 Min |      2.0 GByte |
+| SimSiam       |         64 |    150 |     22.7M |              0.664 |            0.678 |  210.2 Min |      1.9 GByte |
+| FastSiam      |         64 |    150 |     22.7M |              0.671 |            0.693 |  342.1 Min |      3.4 GByte |
+| SwaV          |         64 |    150 |     12.9M |              0.687 |            0.709 |  654.2 Min |      3.0 GByte |
+| DINO          |         64 |    150 |     17.5M |              0.663 |            0.683 |  474.2 Min |      3.1 GByte |
+| MSN           |         64 |    150 |     27.8M |              0.661 |            0.679 |  647.6 Min |      7.3 GByte |
 -------------------------------------------------------------------------------------------------------------------------
 """
 
@@ -112,7 +119,7 @@ memory_bank_size = 4096
 
 subset = False  # Whether to benchmark using a subset of the dataset
 max_epochs = 200 if subset else 150
-knn_k = 25  # subset y_train.value_counts().min() * 2  // 2 + 1 --> closest odd number
+knn_k = 5  # sweep of knn_k values leads to best performance at k=5
 knn_t = 0.1
 classes = 9
 input_size = 224
@@ -885,6 +892,7 @@ class SimMIMModel(KNNBenchmarkModule2):
         # pass all the tokens to the encoder, both masked and non masked ones
         tokens = self.backbone.images_to_tokens(images, prepend_class_token=True)
         tokens_masked = utils.mask_at_index(tokens, idx_mask, self.mask_token)
+        # self.log("rep_std", debug.std_of_l2_normalized(out.flatten(1)))
         return self.backbone.encoder(tokens_masked)
 
     def forward_decoder(self, x_encoded):
@@ -1272,7 +1280,7 @@ def main():
                 strategy=strategy,
                 sync_batchnorm=sync_batchnorm,
                 logger=logger,
-                callbacks=[checkpoint_callback, RichProgressBar()],
+                callbacks=[checkpoint_callback],
                 enable_progress_bar=True,
                 precision="16-mixed" if use_amp else "32-true",
             )
