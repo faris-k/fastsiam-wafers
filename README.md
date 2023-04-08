@@ -1,4 +1,8 @@
-# fastsiam-wafers
+# fastsiam-wafers is no longer maintained 🚧
+- For self-supervised learning of wafer maps, check out [self-supervised-wafermaps](https://github.com/faris-k/self-supervised-wafermaps) instead.
+- If you're looking for a PyTorch Lightning implementation of FastSiam, check out [lightly](https://github.com/lightly-ai/lightly).
+
+## fastsiam-wafers
 Self-Supervised Representation Learning of Wafer Maps with FastSiam
 
 This repository includes an unofficial PyTorch Lightning implementation of ["FastSiam: Resource-Efficient Self-supervised Learning on a Single GPU"](https://link.springer.com/chapter/10.1007/978-3-031-16788-1_4). See [`fastsiam.py`](scripts/models/fastsiam.py) for our implementation, in which we simply modify [lightly AI's](https://github.com/lightly-ai/lightly) implementation of SimSiam. We wanted to make our implementation more or less plug-and-play. The only other thing you'd need is a custom collate function to extract 4 augmented views per image instead of 2, which is pretty simple. Below you'll find a full example.
